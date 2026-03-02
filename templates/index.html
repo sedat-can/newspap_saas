@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PRESSFLOW — Haber Çevirici</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ══════════════════════════════════════════════════════════
+   DESIGN SYSTEM
+══════════════════════════════════════════════════════════ */
+:root {
+  --ink:       #0d0d14;
+  --ink-soft:  #1e1e2e;
+  --ink-mid:   #2c2c3e;
+  --surface:   #16161f;
+  --surface2:  #1c1c28;
+  --border:    #2e2e42;
+  --border2:   #3a3a52;
+  --gold:      #c9a84c;
+  --gold-dim:  #7a6230;
+  --gold-glow: rgba(201,168,76,.15);
+  --cream:     #f5f0e8;
+  --cream-dim: #b8b0a0;
+  --red:       #e05555;
+  --green:     #4caf82;
+  --blue:      #5b9cf6;
+  --text:      #e8e4dc;
+  --text-dim:  #888899;
+  --hl-orig:   rgba(201,168,76,.25);
+  --hl-tr:     rgba(91,156,246,.25);
+
+  --font-display: 'Playfair Display', serif;
+  --font-body:    'DM Sans', sans-serif;
+  --font-mono:    'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: var(--font-body);
+  background: var(--ink);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+/* ══════════════════════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════════════════════ */
+.app { display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+
+/* ── Header ── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 20px;
+  position: relative;
+  z-index: 100;
+}
+
+.logo {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+.logo span { color: var(--cream); }
+
+.header-divider { width: 1px; height: 24px; background: var(--border); }
+
+.header-tab {
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all .2s;
+  border: 1px solid transparent;
+}
+.header-tab:hover { color: var(--text); background: var(--ink-mid); }
+.header-tab.active { color: var(--gold); border-color: var(--gold-dim); background: var(--gold-glow); }
+
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background .3s;
+}
+.status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+.header-stat { font-size: .75rem; color: var(--text-dim); font-family: var(--font-mono); }
+
+/* ── Main panels ── */
+.workspace {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  overflow: hidden;
+}
+
+/* ══════════════════════════════════════════════════════════
+   LEFT PANEL — Sources
+══════════════════════════════════════════════════════════ */
+.panel-sources {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.panel-label {
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.icon-btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all .2s;
+  font-size: 16px;
+  line-height: 1;
+}
+.icon-btn:hover { color: var(--gold); border-color: var(--gold-dim); background: var(--gold-glow); }
+
+.sources-list { flex: 1; overflow-y: auto; padding: 10px 10px; }
+
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s;
+  border: 1px solid transparent;
+  margin-bottom: 2px;
+}
+.source-item:hover { background: var(--ink-mid); }
+.source-item.active { background: var(--gold-glow); border-color: var(--gold-dim); }
+
+.source-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--border2);
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.source-item.active .source-dot { background: var(--gold); }
+.source-item.extra .source-dot { background: var(--blue); }
+
+.source-name {
+  font-size: .82rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  transition: color .15s;
+}
+.source-item:hover .source-name,
+.source-item.active .source-name { color: var(--text); }
+
+.source-del {
+  opacity: 0;
+  font-size: 14px;
+  color: var(--red);
+  cursor: pointer;
+  transition: opacity .15s;
+  background: none; border: none;
+  padding: 0 2px;
+}
+.source-item:hover .source-del { opacity: 1; }
+.source-del:hover { transform: scale(1.2); }
+
+/* Add feed form */
+.add-feed-form {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.add-feed-form.open { display: flex; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label { font-size: .68rem; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+.field input {
+  background: var(--ink-mid);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: .82rem;
+  color: var(--text);
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color .2s;
+}
+.field input:focus { border-color: var(--gold); }
+.field input::placeholder { color: var(--text-dim); }
+
+.form-actions { display: flex; gap: 6px; margin-top: 2px; }
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .5px;
+  cursor: pointer;
+  transition: all .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+}
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn-gold { background: var(--gold); color: var(--ink); }
+.btn-gold:hover:not(:disabled) { background: #dbb85a; }
+.btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--text-dim); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--text-dim); color: var(--text); }
+.btn-red { background: rgba(224,85,85,.15); border: 1px solid rgba(224,85,85,.3); color: var(--red); }
+.btn-red:hover:not(:disabled) { background: rgba(224,85,85,.25); }
+.btn-blue { background: rgba(91,156,246,.15); border: 1px solid rgba(91,156,246,.3); color: var(--blue); }
+.btn-blue:hover:not(:disabled) { background: rgba(91,156,246,.25); }
+.btn-green { background: rgba(76,175,130,.15); border: 1px solid rgba(76,175,130,.3); color: var(--green); }
+.btn-green:hover:not(:disabled) { background: rgba(76,175,130,.25); }
+.btn-sm { padding: 5px 12px; font-size: .75rem; }
+.btn-full { width: 100%; justify-content: center; }
+
+/* ══════════════════════════════════════════════════════════
+   CENTER PANEL — Articles
+══════════════════════════════════════════════════════════ */
+.panel-center {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+.toolbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 280px;
+}
+.search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-dim); }
+.search-wrap input {
+  width: 100%;
+  background: var(--ink-mid);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px 7px 32px;
+  font-size: .82rem;
+  color: var(--text);
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color .2s;
+}
+.search-wrap input:focus { border-color: var(--gold-dim); }
+.search-wrap input::placeholder { color: var(--text-dim); }
+
+.toolbar-sep { flex: 1; }
+
+.sel-badge {
+  background: var(--gold-glow);
+  border: 1px solid var(--gold-dim);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: .75rem;
+  color: var(--gold);
+  font-family: var(--font-mono);
+}
+
+.text-link {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  letter-spacing: .5px;
+  transition: color .15s;
+}
+.text-link:hover { color: var(--gold); }
+
+/* Articles scrollable area */
+.articles-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.empty-icon {
+  font-size: 3rem;
+  opacity: .3;
+}
+.empty-state h3 {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+.empty-state p { font-size: .85rem; max-width: 280px; line-height: 1.6; }
+
+.source-group { margin-bottom: 28px; }
+
+.source-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.source-group-name {
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.source-group-line { flex: 1; height: 1px; background: var(--border); }
+.source-group-count {
+  font-size: .65rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.article-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  margin-bottom: 3px;
+  cursor: pointer;
+  transition: all .15s;
+  position: relative;
+}
+.article-card:hover { background: var(--surface2); border-color: var(--border); }
+.article-card.selected { background: var(--gold-glow); border-color: var(--gold-dim); }
+
+.article-card input[type=checkbox] {
+  width: 15px; height: 15px;
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.article-body { flex: 1; min-width: 0; }
+.article-title {
+  font-size: .88rem;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.article-card.selected .article-title { color: var(--cream); }
+
+.article-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .72rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+.article-meta a { color: var(--blue); text-decoration: none; }
+.article-meta a:hover { text-decoration: underline; }
+.meta-dot { opacity: .4; }
+
+/* ══════════════════════════════════════════════════════════
+   RIGHT PANEL — Basket + Actions
+══════════════════════════════════════════════════════════ */
+.panel-right {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.basket-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.basket-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--cream);
+  margin-bottom: 2px;
+}
+.basket-sub { font-size: .72rem; color: var(--text-dim); }
+
+.basket-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  min-height: 0;
+}
+
+.basket-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--ink-mid);
+  margin-bottom: 4px;
+  transition: border-color .15s;
+}
+.basket-item:hover { border-color: var(--border2); }
+
+.basket-item-num {
+  font-size: .65rem;
+  font-family: var(--font-mono);
+  color: var(--gold);
+  margin-top: 2px;
+  flex-shrink: 0;
+  min-width: 18px;
+}
+.basket-item-title {
+  font-size: .78rem;
+  color: var(--text);
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
+}
+.basket-item-source {
+  font-size: .65rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+.basket-item-remove {
+  background: none; border: none;
+  color: var(--text-dim); cursor: pointer;
+  font-size: 14px; padding: 0;
+  transition: color .15s;
+  flex-shrink: 0;
+}
+.basket-item-remove:hover { color: var(--red); }
+
+.basket-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-dim);
+  font-size: .8rem;
+  line-height: 1.6;
+}
+.basket-empty .basket-empty-icon { font-size: 2rem; margin-bottom: 8px; opacity: .3; }
+
+.basket-actions {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════
+   OVERLAY + MODAL
+══════════════════════════════════════════════════════════ */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(4px);
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.overlay.show { display: flex; }
+
+.spinner-card {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 40px 56px;
+  text-align: center;
+  min-width: 300px;
+}
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border2);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin: 0 auto 20px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--cream);
+  margin-bottom: 6px;
+}
+.spinner-sub { font-size: .8rem; color: var(--text-dim); }
+
+/* ══════════════════════════════════════════════════════════
+   TRANSLATION VIEWER (Full screen modal)
+══════════════════════════════════════════════════════════ */
+.viewer-overlay {
+  position: fixed; inset: 0;
+  background: var(--ink);
+  z-index: 600;
+  display: none;
+  flex-direction: column;
+}
+.viewer-overlay.show { display: flex; }
+
+.viewer-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.viewer-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--cream);
+}
+.viewer-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.article-nav-btn {
+  width: 32px; height: 32px;
+  background: var(--ink-mid);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  transition: all .15s;
+}
+.article-nav-btn:hover:not(:disabled) { color: var(--gold); border-color: var(--gold-dim); }
+.article-nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+.article-nav-counter {
+  font-size: .78rem;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  min-width: 50px;
+  text-align: center;
+}
+
+.viewer-body {
+  flex: 1;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.viewer-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+.viewer-pane:last-child { border-right: none; }
+
+.pane-header {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+.pane-lang {
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.pane-lang.orig { color: var(--gold); }
+.pane-lang.tr   { color: var(--blue); }
+.pane-legend {
+  margin-left: auto;
+  font-size: .68rem;
+  color: var(--text-dim);
+}
+
+.pane-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  scroll-behavior: smooth;
+}
+
+.article-viewer-title {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.viewer-pane:first-child .article-viewer-title { color: var(--cream); }
+.viewer-pane:last-child  .article-viewer-title { color: #a8c8f8; }
+
+.para-chunk {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: .88rem;
+  line-height: 1.75;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+  position: relative;
+}
+.para-chunk:hover { background: var(--ink-mid); border-color: var(--border); }
+.para-chunk.highlight-orig {
+  background: var(--hl-orig) !important;
+  border-color: var(--gold-dim) !important;
+}
+.para-chunk.highlight-tr {
+  background: var(--hl-tr) !important;
+  border-color: rgba(91,156,246,.4) !important;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 11px 20px;
+  border-radius: 8px;
+  font-size: .85rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  transform: translateY(60px);
+  opacity: 0;
+  transition: all .25s;
+  z-index: 1000;
+  border: 1px solid transparent;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok  { background: rgba(76,175,130,.15); border-color: rgba(76,175,130,.4); color: var(--green); }
+.toast.err { background: rgba(224,85,85,.15);  border-color: rgba(224,85,85,.4);  color: var(--red); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo">PRESS<span>FLOW</span></div>
+    <div class="header-divider"></div>
+    <div class="header-tab active" id="tabFeed" onclick="switchTab('feed')">Haberler</div>
+    <div class="header-tab" id="tabViewer" onclick="switchTab('viewer')" style="display:none">Çeviri Görüntüleyici</div>
+    <div class="header-right">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="header-stat" id="headerStat">— kaynak yüklü</div>
+    </div>
+  </header>
+
+  <!-- ── WORKSPACE ── -->
+  <div class="workspace">
+
+    <!-- LEFT: Sources -->
+    <div class="panel-sources">
+      <div class="panel-header">
+        <span class="panel-label">Kaynaklar</span>
+        <button class="icon-btn" title="Yeni kaynak ekle" onclick="toggleAddForm()">＋</button>
+      </div>
+
+      <div class="sources-list" id="sourcesList">
+        <div style="color:var(--text-dim);font-size:.8rem;padding:12px 8px;">Yükleniyor…</div>
+      </div>
+
+      <div class="add-feed-form" id="addFeedForm">
+        <div class="field">
+          <label>Kaynak Adı</label>
+          <input type="text" id="newFeedName" placeholder="örn. The Guardian"/>
+        </div>
+        <div class="field">
+          <label>RSS URL</label>
+          <input type="text" id="newFeedUrl" placeholder="https://…/feed"/>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-gold btn-sm" onclick="addFeed()">Ekle</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAddForm()">İptal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: Articles -->
+    <div class="panel-center">
+      <div class="toolbar">
+        <button class="btn btn-gold" id="btnFetch" onclick="fetchNews()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4v5h.582M20 20v-5h-.581M4.582 9a8 8 0 0115.837 2M19.419 15a8 8 0 01-15.837-2"/></svg>
+          Haberleri Getir
+        </button>
+
+        <div class="search-wrap">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" id="searchBox" placeholder="Başlıkta ara…" oninput="filterArticles()"/>
+        </div>
+
+        <span class="text-link" onclick="selectAll(true)">Tümünü seç</span>
+        <span style="color:var(--border2)">|</span>
+        <span class="text-link" onclick="selectAll(false)">Temizle</span>
+
+        <div class="toolbar-sep"></div>
+        <div class="sel-badge"><span id="selCount">0</span> seçili</div>
+      </div>
+
+      <div class="articles-area" id="articlesArea">
+        <div class="empty-state">
+          <div class="empty-icon">◈</div>
+          <h3>Haberler Bekleniyor</h3>
+          <p>Tüm kaynaklardan son haberleri yüklemek için "Haberleri Getir" düğmesine basın.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Basket -->
+    <div class="panel-right">
+      <div class="basket-header">
+        <div class="basket-title">Çeviri Sepeti</div>
+        <div class="basket-sub" id="basketSub">Henüz makale seçilmedi</div>
+      </div>
+
+      <div class="basket-list" id="basketList">
+        <div class="basket-empty">
+          <div class="basket-empty-icon">⊡</div>
+          Sol taraftan makaleleri işaretleyerek buraya ekleyin, ardından çevirin.
+        </div>
+      </div>
+
+      <div class="basket-actions">
+        <button class="btn btn-green btn-full" id="btnTranslate" onclick="translateSelected()" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 5h12M9 3v2M12.5 21l-4-9-4 9M5.5 16h6M15 7h6M18 4v6M14.5 13l3.5 4M14.5 17l3.5-4"/></svg>
+          Çevir &amp; Görüntüle
+        </button>
+        <button class="btn btn-ghost btn-full" id="btnDownload" style="display:none" onclick="downloadDocx()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Word İndir (.docx)
+        </button>
+        <button class="btn btn-ghost btn-full btn-sm" onclick="clearBasket()">Sepeti Temizle</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TRANSLATION VIEWER (fullscreen) ── -->
+<div class="viewer-overlay" id="viewerOverlay">
+  <div class="viewer-header">
+    <span class="viewer-title" id="viewerTitle">Çeviri Görüntüleyici</span>
+    <div class="viewer-nav">
+      <span style="font-size:.75rem;color:var(--text-dim);font-family:var(--font-mono)">Fareyle üzerine gelin → paragraflar eşleşir</span>
+      <div class="header-divider" style="margin:0 8px"></div>
+      <button class="article-nav-btn" id="btnPrev" onclick="navArticle(-1)">‹</button>
+      <span class="article-nav-counter" id="navCounter">1 / 1</span>
+      <button class="article-nav-btn" id="btnNext" onclick="navArticle(1)">›</button>
+      <div class="header-divider" style="margin:0 8px"></div>
+      <button class="btn btn-ghost btn-sm" onclick="closeViewer()">✕ Kapat</button>
+    </div>
+  </div>
+
+  <div class="viewer-body">
+    <div class="viewer-pane" id="paneOrig">
+      <div class="pane-header">
+        <span class="pane-lang orig">Orijinal</span>
+        <span class="pane-legend">Üzerine gelince eşleşir</span>
+      </div>
+      <div class="pane-content" id="origContent"></div>
+    </div>
+    <div class="viewer-pane" id="paneTr">
+      <div class="pane-header">
+        <span class="pane-lang tr">Türkçe Çeviri</span>
+        <span class="pane-legend">DeepL ile çevrildi</span>
+      </div>
+      <div class="pane-content" id="trContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Spinner overlay -->
+<div class="overlay" id="overlay">
+  <div class="spinner-card">
+    <div class="spinner"></div>
+    <div class="spinner-title" id="overlayTitle">İşleniyor…</div>
+    <div class="spinner-sub" id="overlaySub">Lütfen bekleyin</div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════════ */
+let allArticles   = [];
+let selectedIds   = new Set();
+let allFeeds      = [];
+let translatedArticles = [];
+let currentDocxFile    = null;
+let currentViewerIdx   = 0;
+let activeSource       = null;  // null = all
+
+/* ══════════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════════ */
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadFeeds();
+});
+
+async function loadFeeds() {
+  try {
+    const res  = await fetch("/api/feeds");
+    const data = await res.json();
+    allFeeds   = data.feeds;
+    renderSources();
+    document.getElementById("headerStat").textContent = `${allFeeds.length} kaynak yüklü`;
+  } catch(e) { toast("Kaynaklar yüklenemedi", "err"); }
+}
+
+/* ══════════════════════════════════════════════════════════
+   SOURCES
+══════════════════════════════════════════════════════════ */
+function renderSources() {
+  const list = document.getElementById("sourcesList");
+  let html = `<div class="source-item ${activeSource===null?'active':''}" onclick="filterBySource(null)">
+    <div class="source-dot"></div>
+    <div class="source-name">Tüm Kaynaklar</div>
+  </div>`;
+
+  for (const f of allFeeds) {
+    const isActive = activeSource === f.name;
+    html += `<div class="source-item ${isActive?'active':''}" onclick="filterBySource('${esc(f.name)}')">
+      <div class="source-dot"></div>
+      <div class="source-name" title="${esc(f.name)}">${esc(f.name)}</div>
+      <button class="source-del" title="Kaldır" onclick="event.stopPropagation(); deleteFeed('${esc(f.name)}')">✕</button>
+    </div>`;
+  }
+  list.innerHTML = html;
+}
+
+function filterBySource(name) {
+  activeSource = name;
+  renderSources();
+  filterArticles();
+}
+
+function toggleAddForm() {
+  const f = document.getElementById("addFeedForm");
+  f.classList.toggle("open");
+}
+
+async function addFeed() {
+  const name = document.getElementById("newFeedName").value.trim();
+  const url  = document.getElementById("newFeedUrl").value.trim();
+  if (!name || !url) { toast("Ad ve URL gerekli", "err"); return; }
+
+  const res = await fetch("/api/feeds/add", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({name, url})
+  });
+  const data = await res.json();
+  if (data.error) { toast(data.error, "err"); return; }
+
+  allFeeds.push({name, url, extra: true});
+  renderSources();
+  document.getElementById("newFeedName").value = "";
+  document.getElementById("newFeedUrl").value  = "";
+  document.getElementById("addFeedForm").classList.remove("open");
+  document.getElementById("headerStat").textContent = `${allFeeds.length} kaynak yüklü`;
+  toast(`"${name}" eklendi`, "ok");
+}
+
+async function deleteFeed(name) {
+  await fetch("/api/feeds/delete", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({name})
+  });
+  allFeeds = allFeeds.filter(f => f.name !== name);
+  renderSources();
+  filterArticles();
+  document.getElementById("headerStat").textContent = `${allFeeds.length} kaynak yüklü`;
+  toast(`"${name}" kaldırıldı`, "ok");
+}
+
+/* ══════════════════════════════════════════════════════════
+   FETCH NEWS
+══════════════════════════════════════════════════════════ */
+async function fetchNews() {
+  showOverlay("Haberler Getiriliyor…", `${allFeeds.length} kaynaktan çekiliyor`);
+  document.getElementById("statusDot").className = "status-dot live";
+  try {
+    const res  = await fetch("/api/fetch", {method:"POST"});
+    const data = await res.json();
+    allArticles = data.articles;
+    selectedIds.clear();
+    renderArticles(getFilteredArticles());
+    updateBasket();
+    toast(`${data.count} haber yüklendi`, "ok");
+  } catch(e) {
+    toast("Haberler yüklenemedi: " + e, "err");
+  } finally {
+    hideOverlay();
+    document.getElementById("statusDot").className = "status-dot";
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   ARTICLES
+══════════════════════════════════════════════════════════ */
+function getFilteredArticles() {
+  const q = document.getElementById("searchBox").value.toLowerCase();
+  return allArticles.filter(a => {
+    const matchSource = activeSource === null || a.source === activeSource;
+    const matchSearch = !q || a.title.toLowerCase().includes(q);
+    return matchSource && matchSearch;
+  });
+}
+
+function filterArticles() { renderArticles(getFilteredArticles()); }
+
+function renderArticles(articles) {
+  const area = document.getElementById("articlesArea");
+  if (!articles.length) {
+    area.innerHTML = `<div class="empty-state"><div class="empty-icon">◈</div><h3>Sonuç Yok</h3><p>Arama kriterini değiştirin.</p></div>`;
+    return;
+  }
+
+  const grouped = {};
+  for (const a of articles) {
+    if (!grouped[a.source]) grouped[a.source] = [];
+    grouped[a.source].push(a);
+  }
+
+  let html = "";
+  for (const [source, arts] of Object.entries(grouped)) {
+    html += `<div class="source-group">
+      <div class="source-group-header">
+        <span class="source-group-name">${esc(source)}</span>
+        <span class="source-group-line"></span>
+        <span class="source-group-count">${arts.length}</span>
+      </div>`;
+    for (const art of arts) {
+      const sel = selectedIds.has(art.id);
+      const dateStr = art.date ? art.date.substring(0,16) : "";
+      html += `<div class="article-card ${sel?'selected':''}" onclick="toggleSelect('${art.id}')">
+        <input type="checkbox" ${sel?"checked":""} onclick="event.stopPropagation(); toggleSelect('${art.id}')"/>
+        <div class="article-body">
+          <div class="article-title">${esc(art.title)}</div>
+          <div class="article-meta">
+            <span>${dateStr}</span>
+            ${art.url ? `<span class="meta-dot">·</span><a href="${esc(art.url)}" target="_blank" onclick="event.stopPropagation()">Kaynak ↗</a>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  area.innerHTML = html;
+}
+
+function toggleSelect(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  // Update card visually
+  const card = document.querySelector(`[onclick="toggleSelect('${id}')"]`);
+  if (card) {
+    card.classList.toggle("selected", selectedIds.has(id));
+    const chk = card.querySelector("input[type=checkbox]");
+    if (chk) chk.checked = selectedIds.has(id);
+  }
+  updateBasket();
+}
+
+function selectAll(doSelect) {
+  const visible = getFilteredArticles();
+  for (const a of visible) {
+    if (doSelect) selectedIds.add(a.id);
+    else selectedIds.delete(a.id);
+  }
+  renderArticles(visible);
+  updateBasket();
+}
+
+/* ══════════════════════════════════════════════════════════
+   BASKET
+══════════════════════════════════════════════════════════ */
+function updateBasket() {
+  const selected = allArticles.filter(a => selectedIds.has(a.id));
+  document.getElementById("selCount").textContent = selected.length;
+  document.getElementById("btnTranslate").disabled = selected.length === 0;
+
+  const list = document.getElementById("basketList");
+  const sub  = document.getElementById("basketSub");
+
+  if (!selected.length) {
+    list.innerHTML = `<div class="basket-empty"><div class="basket-empty-icon">⊡</div>Sol taraftan makaleleri işaretleyerek buraya ekleyin, ardından çevirin.</div>`;
+    sub.textContent = "Henüz makale seçilmedi";
+    return;
+  }
+
+  sub.textContent = `${selected.length} makale hazır`;
+  let html = "";
+  selected.forEach((art, i) => {
+    html += `<div class="basket-item">
+      <span class="basket-item-num">${String(i+1).padStart(2,'0')}</span>
+      <div style="flex:1;min-width:0">
+        <div class="basket-item-title">${esc(art.title)}</div>
+        <div class="basket-item-source">${esc(art.source)}</div>
+      </div>
+      <button class="basket-item-remove" onclick="toggleSelect('${art.id}')">✕</button>
+    </div>`;
+  });
+  list.innerHTML = html;
+}
+
+function clearBasket() {
+  selectedIds.clear();
+  renderArticles(getFilteredArticles());
+  updateBasket();
+  document.getElementById("btnDownload").style.display = "none";
+}
+
+/* ══════════════════════════════════════════════════════════
+   TRANSLATE
+══════════════════════════════════════════════════════════ */
+async function translateSelected() {
+  const selected = allArticles.filter(a => selectedIds.has(a.id));
+  if (!selected.length) return;
+
+  showOverlay("Çeviriliyor…", `${selected.length} makale DeepL ile çeviriliyor`);
+  try {
+    const res  = await fetch("/api/translate", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({articles: selected})
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, "err"); return; }
+
+    translatedArticles = data.articles;
+    currentDocxFile    = data.filename;
+
+    document.getElementById("btnDownload").style.display = "flex";
+    toast(`${data.articles.length} makale çevrildi ✓`, "ok");
+
+    // Open viewer
+    openViewer(0);
+  } catch(e) {
+    toast("Hata: " + e, "err");
+  } finally {
+    hideOverlay();
+  }
+}
+
+function downloadDocx() {
+  if (!currentDocxFile) return;
+  const a = document.createElement("a");
+  a.href = `/api/download/${currentDocxFile}`;
+  a.download = currentDocxFile;
+  a.click();
+}
+
+/* ══════════════════════════════════════════════════════════
+   TRANSLATION VIEWER
+══════════════════════════════════════════════════════════ */
+function openViewer(idx) {
+  currentViewerIdx = idx;
+  renderViewer();
+  document.getElementById("viewerOverlay").classList.add("show");
+  document.getElementById("tabViewer").style.display = "block";
+  switchTab("viewer");
+}
+
+function closeViewer() {
+  document.getElementById("viewerOverlay").classList.remove("show");
+  switchTab("feed");
+}
+
+function navArticle(dir) {
+  const next = currentViewerIdx + dir;
+  if (next < 0 || next >= translatedArticles.length) return;
+  currentViewerIdx = next;
+  renderViewer();
+}
+
+function renderViewer() {
+  const art = translatedArticles[currentViewerIdx];
+  if (!art) return;
+
+  const total = translatedArticles.length;
+  document.getElementById("navCounter").textContent = `${currentViewerIdx+1} / ${total}`;
+  document.getElementById("btnPrev").disabled = currentViewerIdx === 0;
+  document.getElementById("btnNext").disabled = currentViewerIdx === total - 1;
+  document.getElementById("viewerTitle").textContent = art.source + " — " + art.title.substring(0,60) + (art.title.length>60?"…":"");
+
+  const paras = art.paragraphs || [];
+
+  // Original pane
+  let origHtml = `<div class="article-viewer-title">${esc(art.title)}</div>`;
+  paras.forEach((p, i) => {
+    origHtml += `<div class="para-chunk" data-idx="${i}" onmouseenter="hlPair(${i})" onmouseleave="unhhlPair()">${esc(p.original)}</div>`;
+  });
+  if (!paras.length) origHtml += `<p style="color:var(--text-dim);font-size:.85rem">Makale metni alınamadı.</p>`;
+
+  // Translated pane
+  let trHtml = `<div class="article-viewer-title">${esc(art.title_tr||art.title)}</div>`;
+  paras.forEach((p, i) => {
+    trHtml += `<div class="para-chunk" data-idx="${i}" onmouseenter="hlPair(${i})" onmouseleave="unhhlPair()">${esc(p.translated)}</div>`;
+  });
+  if (!paras.length) trHtml += `<p style="color:var(--text-dim);font-size:.85rem">Çeviri mevcut değil.</p>`;
+
+  document.getElementById("origContent").innerHTML = origHtml;
+  document.getElementById("trContent").innerHTML   = trHtml;
+}
+
+function hlPair(idx) {
+  document.querySelectorAll("#origContent .para-chunk").forEach(el => {
+    el.classList.toggle("highlight-orig", parseInt(el.dataset.idx) === idx);
+  });
+  document.querySelectorAll("#trContent .para-chunk").forEach(el => {
+    el.classList.toggle("highlight-tr", parseInt(el.dataset.idx) === idx);
+  });
+  // Scroll the other pane to same index
+  const trEl   = document.querySelector(`#trContent .para-chunk[data-idx="${idx}"]`);
+  const origEl = document.querySelector(`#origContent .para-chunk[data-idx="${idx}"]`);
+  if (trEl)   trEl.scrollIntoView({block:"nearest", behavior:"smooth"});
+  if (origEl) origEl.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+
+function unhhlPair() {
+  document.querySelectorAll(".para-chunk").forEach(el => {
+    el.classList.remove("highlight-orig", "highlight-tr");
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
+   TAB SWITCH
+══════════════════════════════════════════════════════════ */
+function switchTab(tab) {
+  document.getElementById("tabFeed").classList.toggle("active", tab==="feed");
+  document.getElementById("tabViewer").classList.toggle("active", tab==="viewer");
+  if (tab==="viewer") document.getElementById("viewerOverlay").classList.add("show");
+  else document.getElementById("viewerOverlay").classList.remove("show");
+}
+
+/* ══════════════════════════════════════════════════════════
+   HELPERS
+══════════════════════════════════════════════════════════ */
+function showOverlay(title, sub) {
+  document.getElementById("overlayTitle").textContent = title;
+  document.getElementById("overlaySub").textContent   = sub;
+  document.getElementById("overlay").classList.add("show");
+}
+function hideOverlay() { document.getElementById("overlay").classList.remove("show"); }
+
+let toastTimer;
+function toast(msg, type) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
+}
+
+function esc(s) {
+  if (!s) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
