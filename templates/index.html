@@ -287,6 +287,71 @@ header {
 .tts-body-standalone { flex:1; overflow-y:auto; padding:14px 18px }
 
 /* ══════════════════════════════════════════════
+   ARTICLE DETAIL DRAWER
+══════════════════════════════════════════════ */
+.detail-drawer {
+  position:fixed; top:60px; right:0; bottom:0; width:480px;
+  background:white; border-left:1px solid var(--border);
+  box-shadow:-8px 0 32px rgba(26,22,18,.12);
+  display:flex; flex-direction:column; z-index:300;
+  transform:translateX(100%); transition:transform .28s cubic-bezier(.4,0,.2,1);
+}
+.detail-drawer.open { transform:translateX(0) }
+
+.drawer-head {
+  padding:18px 20px 14px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; gap:12px; flex-shrink:0;
+}
+.drawer-close {
+  width:28px; height:28px; border-radius:5px; border:1px solid var(--border);
+  background:transparent; color:var(--muted); cursor:pointer; font-size:14px;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  transition:all .15s; margin-top:2px;
+}
+.drawer-close:hover { border-color:var(--red); color:var(--red) }
+
+.drawer-title {
+  font-family:var(--font-d); font-size:1.3rem; font-weight:700;
+  color:var(--ink); line-height:1.3; flex:1;
+}
+
+.drawer-meta {
+  padding:10px 20px; border-bottom:1px solid var(--border);
+  display:flex; gap:10px; flex-wrap:wrap; flex-shrink:0; background:var(--paper2);
+}
+.dmeta { font-size:.7rem; font-family:var(--font-m); color:var(--muted) }
+.dmeta b { color:var(--ink3) }
+.dmeta a { color:var(--blue); text-decoration:none }
+.dmeta a:hover { text-decoration:underline }
+
+.drawer-body { flex:1; overflow-y:auto; padding:18px 20px }
+.drawer-summary {
+  font-size:.9rem; line-height:1.78; color:var(--ink2);
+  border-left:3px solid var(--amber); padding-left:14px;
+  margin-bottom:16px;
+}
+.drawer-full-text {
+  font-size:.88rem; line-height:1.78; color:var(--ink3); white-space:pre-wrap;
+}
+.drawer-loading {
+  display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.83rem; padding:8px 0;
+}
+.drawer-spinner {
+  width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--amber);
+  border-radius:50%; animation:spin .6s linear infinite; flex-shrink:0;
+}
+
+.drawer-foot {
+  padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:8px; flex-shrink:0;
+  background:var(--paper2);
+}
+
+/* Make article cards show detail on click, checkbox separate */
+.art-card { cursor:pointer }
+.art-card.in-basket { background:var(--amber-bg); border-color:rgba(193,122,46,.3) }
+.art-card.previewing { background:rgba(46,111,168,.06); border-color:rgba(46,111,168,.25) }
+
+/* ══════════════════════════════════════════════
    RIGHT PANEL — Basket
 ══════════════════════════════════════════════ */
 .panel-right {
@@ -437,8 +502,74 @@ input[type=range].ts::-webkit-slider-thumb {
 .vfoot-meta b { color:var(--ink3) }
 
 /* ══════════════════════════════════════════════
-   MODALS
+   ARTICLE DETAIL PANEL
 ══════════════════════════════════════════════ */
+.detail-panel {
+  position:fixed; top:60px; right:0; bottom:0; width:480px;
+  background:white; border-left:2px solid var(--border);
+  box-shadow:-4px 0 24px rgba(26,22,18,.12);
+  display:flex; flex-direction:column; z-index:400;
+  transform:translateX(100%); transition:transform .3s cubic-bezier(.4,0,.2,1);
+}
+.detail-panel.open { transform:translateX(0) }
+
+.dp-head {
+  padding:18px 20px 14px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; gap:12px; flex-shrink:0; background:var(--paper2);
+}
+.dp-head-info { flex:1; min-width:0 }
+.dp-source {
+  font-size:.62rem; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  color:var(--amber); margin-bottom:5px;
+}
+.dp-title {
+  font-family:var(--font-d); font-size:1.25rem; font-weight:700;
+  color:var(--ink); line-height:1.3;
+}
+.dp-meta {
+  display:flex; gap:8px; margin-top:6px; font-size:.7rem;
+  color:var(--muted); font-family:var(--font-m); flex-wrap:wrap;
+}
+.dp-close {
+  width:30px; height:30px; border-radius:6px; border:1px solid var(--border2);
+  background:transparent; cursor:pointer; color:var(--muted); font-size:16px;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  transition:all .15s;
+}
+.dp-close:hover { border-color:var(--red); color:var(--red); background:rgba(184,64,64,.06) }
+
+.dp-actions {
+  padding:10px 16px; border-bottom:1px solid var(--border);
+  display:flex; gap:8px; flex-shrink:0; background:white;
+}
+
+.dp-body {
+  flex:1; overflow-y:auto; padding:20px 22px;
+}
+.dp-loading {
+  display:flex; align-items:center; justify-content:center; height:100px;
+  color:var(--muted); font-size:.82rem; gap:8px;
+}
+.dp-spinner {
+  width:18px; height:18px; border:2px solid var(--border);
+  border-top-color:var(--amber); border-radius:50%;
+  animation:spin .7s linear infinite; flex-shrink:0;
+}
+.dp-text {
+  font-size:.88rem; line-height:1.82; color:var(--ink2);
+}
+.dp-text p { margin-bottom:12px }
+.dp-summary {
+  background:var(--paper2); border-left:3px solid var(--amber);
+  padding:12px 14px; border-radius:0 6px 6px 0;
+  font-size:.85rem; line-height:1.7; color:var(--ink3); margin-bottom:16px;
+  font-style:italic;
+}
+.dp-no-body {
+  color:var(--muted); font-size:.82rem; text-align:center;
+  padding:40px 20px; line-height:1.7;
+}
+
 .overlay { position:fixed; inset:0; background:rgba(26,22,18,.5); backdrop-filter:blur(4px); z-index:500; display:none; align-items:center; justify-content:center }
 .overlay.show { display:flex }
 .spin-card {
@@ -606,6 +737,27 @@ input[type=range].ts::-webkit-slider-thumb {
 </div>
 </div>
 
+<!-- ══ ARTICLE DETAIL DRAWER ══ -->
+<div class="detail-drawer" id="detailDrawer">
+  <div class="drawer-head">
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+    <div class="drawer-title" id="drawerTitle">—</div>
+  </div>
+  <div class="drawer-meta" id="drawerMeta"></div>
+  <div class="drawer-body">
+    <div class="drawer-summary" id="drawerSummary"></div>
+    <div id="drawerFullWrap"></div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-amber btn-full" id="drawerBasketBtn" onclick="drawerToggleBasket()">
+      + Sepete Ekle
+    </button>
+    <a id="drawerLink" href="#" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration:none">
+      Kaynağa Git ↗
+    </a>
+  </div>
+</div>
+
 <!-- ══ TRANSLATION VIEWER ══ -->
 <div class="viewer-ov" id="viewerOv">
   <div class="viewer-masthead">
@@ -673,6 +825,25 @@ input[type=range].ts::-webkit-slider-thumb {
   </div>
 </div>
 
+<!-- ══ ARTICLE DETAIL PANEL ══ -->
+<div class="detail-panel" id="detailPanel">
+  <div class="dp-head">
+    <div class="dp-head-info">
+      <div class="dp-source" id="dpSource"></div>
+      <div class="dp-title" id="dpTitle"></div>
+      <div class="dp-meta" id="dpMeta"></div>
+    </div>
+    <button class="dp-close" onclick="closeDetail()">✕</button>
+  </div>
+  <div class="dp-actions">
+    <button class="btn btn-amber btn-sm" id="dpBasketBtn" onclick="dpToggleBasket()">+ Sepete Ekle</button>
+    <a class="btn btn-ghost btn-sm" id="dpLink" href="#" target="_blank">Kaynağa Git ↗</a>
+  </div>
+  <div class="dp-body" id="dpBody">
+    <div class="dp-loading"><div class="dp-spinner"></div> Yükleniyor…</div>
+  </div>
+</div>
+
 <!-- Spinner -->
 <div class="overlay" id="overlay">
   <div class="spin-card">
@@ -700,6 +871,7 @@ input[type=range].ts::-webkit-slider-thumb {
 /* ═══════════════════════════════ STATE ═══════════════════════════════ */
 let allArticles = [], selectedIds = new Set(), allFeeds = [];
 let activeSource = null, translated = [], currentDocx = null, viewIdx = 0;
+let previewId = null, previewArticle = null;
 
 /* ═══════════════════════════════ INIT ════════════════════════════════ */
 document.addEventListener("DOMContentLoaded", () => { loadFeeds(); ttsInitVoices(); });
@@ -787,20 +959,92 @@ function renderArticles(arts) {
   const g={};for(const a of arts){if(!g[a.source])g[a.source]=[];g[a.source].push(a)}
   el.innerHTML=Object.entries(g).map(([src,as])=>`<div class="src-group">
     <div class="sgh"><span class="sgh-name">${esc(src)}</span><span class="sgh-line"></span><span class="sgh-ct">${as.length}</span></div>
-    ${as.map(a=>`<div class="art-card ${selectedIds.has(a.id)?'selected':''}" onclick="toggleSel('${a.id}')">
-      <input type="checkbox" ${selectedIds.has(a.id)?"checked":""} onclick="event.stopPropagation();toggleSel('${a.id}')"/>
+    ${as.map(a=>`<div class="art-card ${selectedIds.has(a.id)?'in-basket':''} ${previewId===a.id?'previewing':''}" id="card-${a.id}" onclick="openDrawer('${a.id}')">
+      <input type="checkbox" ${selectedIds.has(a.id)?"checked":""} title="Sepete ekle/çıkar" onclick="event.stopPropagation();toggleSel('${a.id}')"/>
       <div class="art-body">
         <div class="art-title">${esc(a.title)}</div>
-        <div class="art-meta">${a.date?`<span>${a.date.substring(0,16)}</span>`:''} ${a.author?`<span>· ${esc(a.author)}</span>`:''} ${a.url?`<a href="${esc(a.url)}" target="_blank" onclick="event.stopPropagation()">Kaynak ↗</a>`:''}</div>
-      </div></div>`).join('')}</div>`).join('');
+        <div class="art-meta">${a.date?`<span>${a.date.substring(0,16)}</span>`:''} ${a.author?`<span>· ${esc(a.author)}</span>`:''} ${a.url?`<a href="${esc(a.url)}" target="_blank" onclick="event.stopPropagation()">↗</a>`:''}</div>
+      </div>
+      <span style="font-size:.7rem;color:var(--muted);flex-shrink:0;margin-top:2px">›</span>
+    </div>`).join('')}</div>`).join('');
 }
 function toggleSel(id) {
   selectedIds.has(id)?selectedIds.delete(id):selectedIds.add(id);
-  const c=document.querySelector(`.art-card[onclick="toggleSel('${id}')"]`);
-  if(c){c.classList.toggle("selected",selectedIds.has(id));const x=c.querySelector("input");if(x)x.checked=selectedIds.has(id)}
+  const c=document.getElementById(`card-${id}`);
+  if(c){c.classList.toggle("in-basket",selectedIds.has(id));const x=c.querySelector("input");if(x)x.checked=selectedIds.has(id)}
+  // update drawer button if open
+  if(previewId===id) updateDrawerBtn();
   updateBasket();
 }
 function selectAll(v){filtered().forEach(a=>v?selectedIds.add(a.id):selectedIds.delete(a.id));renderArticles(filtered());updateBasket()}
+
+/* ═══════════════════════════════ DETAIL DRAWER ═══════════════════════ */
+function openDrawer(id) {
+  const art = allArticles.find(a=>a.id===id); if(!art) return;
+  previewArticle = art; previewId = id;
+
+  // Update previewing state on cards
+  document.querySelectorAll(".art-card").forEach(c=>{
+    c.classList.toggle("previewing", c.id===`card-${id}`);
+  });
+
+  document.getElementById("drawerTitle").textContent = art.title;
+  document.getElementById("drawerLink").href = art.url || "#";
+
+  // Meta
+  const meta = [
+    art.source && `<span class="dmeta">Kaynak: <b>${esc(art.source)}</b></span>`,
+    art.author && `<span class="dmeta">Yazar: <b>${esc(art.author)}</b></span>`,
+    art.date   && `<span class="dmeta">${art.date.substring(0,16)}</span>`,
+    art.url    && `<span class="dmeta"><a href="${esc(art.url)}" target="_blank">Kaynağa Git ↗</a></span>`,
+  ].filter(Boolean).join('');
+  document.getElementById("drawerMeta").innerHTML = meta;
+
+  // Summary
+  const summary = art.summary ? art.summary.replace(/<[^>]*>/g,'').trim() : '';
+  document.getElementById("drawerSummary").textContent = summary || 'Özet mevcut değil.';
+  document.getElementById("drawerFullWrap").innerHTML =
+    `<div class="drawer-loading"><div class="drawer-spinner"></div>Tam metin yükleniyor…</div>`;
+
+  updateDrawerBtn();
+  document.getElementById("detailDrawer").classList.add("open");
+
+  // Fetch full text
+  if(art.url) {
+    fetch("/api/fetch-text", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url:art.url})})
+      .then(r=>r.json()).then(d=>{
+        if(d.text && previewId===id) {
+          document.getElementById("drawerFullWrap").innerHTML =
+            `<hr style="border:none;border-top:1px solid var(--border);margin:14px 0"/>
+             <div class="drawer-full-text">${esc(d.text.substring(0,3000))}${d.text.length>3000?'\n\n[…]':''}</div>`;
+        } else if(previewId===id) {
+          document.getElementById("drawerFullWrap").innerHTML = '';
+        }
+      }).catch(()=>{ if(previewId===id) document.getElementById("drawerFullWrap").innerHTML=''; });
+  } else {
+    document.getElementById("drawerFullWrap").innerHTML = '';
+  }
+}
+
+function updateDrawerBtn() {
+  const btn = document.getElementById("drawerBasketBtn");
+  if(!btn||!previewId) return;
+  const inBasket = selectedIds.has(previewId);
+  btn.textContent = inBasket ? "✓ Sepetten Çıkar" : "+ Sepete Ekle";
+  btn.className   = inBasket ? "btn btn-ghost btn-full" : "btn btn-amber btn-full";
+}
+
+function drawerToggleBasket() {
+  if(!previewId) return;
+  toggleSel(previewId);
+  updateDrawerBtn();
+}
+
+function closeDrawer() {
+  document.getElementById("detailDrawer").classList.remove("open");
+  previewId = null; previewArticle = null;
+  document.querySelectorAll(".art-card").forEach(c=>c.classList.remove("previewing"));
+}
 
 /* ═══════════════════════════════ BASKET ══════════════════════════════ */
 function updateBasket() {
@@ -1016,7 +1260,76 @@ function ttsRateChange(){TTS.rate=parseFloat(document.getElementById("vTtsRate")
 function ttsVolChange(){TTS.vol=parseFloat(document.getElementById("vTtsVol").value);document.getElementById("vTtsVolVal").textContent=Math.round(TTS.vol*100)+"%"}
 function ttsVoiceChange(){TTS.voice=document.getElementById("vTtsVoice").value;if(TTS.playing){const i=TTS.idx;speechSynthesis.cancel();ttsSpeak(i)}}
 
-/* ═══════════════════════════════ UTILS ═══════════════════════════════ */
+/* ═══════════════════════════════ DETAIL PANEL ════════════════════════ */
+let detailArticle = null;
+
+async function openDetail(art) {
+  detailArticle = art;
+  const panel = document.getElementById("detailPanel");
+  panel.classList.add("open");
+
+  document.getElementById("dpSource").textContent = art.source || "";
+  document.getElementById("dpTitle").textContent  = art.title  || "";
+  document.getElementById("dpMeta").innerHTML = [
+    art.date   ? `<span>${art.date.substring(0,16)}</span>` : '',
+    art.author ? `<span>· ${esc(art.author)}</span>`       : '',
+  ].filter(Boolean).join('');
+
+  const linkEl = document.getElementById("dpLink");
+  linkEl.href = art.url || "#";
+
+  // Basket button state
+  dpRefreshBasketBtn();
+
+  // Load body
+  const body = document.getElementById("dpBody");
+  body.innerHTML = `<div class="dp-loading"><div class="dp-spinner"></div> Makale yükleniyor…</div>`;
+
+  // Show summary first if available
+  let summaryHtml = '';
+  if (art.summary) {
+    const cleanSummary = art.summary.replace(/<[^>]+>/g,'').trim();
+    if (cleanSummary) summaryHtml = `<div class="dp-summary">${esc(cleanSummary)}</div>`;
+  }
+
+  if (art.url) {
+    try {
+      const res  = await fetch("/api/article", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url:art.url})});
+      const data = await res.json();
+      if (data.body && data.body.trim()) {
+        const paras = data.body.split('\n').filter(p=>p.trim());
+        body.innerHTML = summaryHtml + `<div class="dp-text">${paras.map(p=>`<p>${esc(p)}</p>`).join('')}</div>`;
+      } else {
+        body.innerHTML = summaryHtml || `<div class="dp-no-body">Makale içeriği yüklenemedi.<br><a href="${esc(art.url)}" target="_blank" style="color:var(--blue)">Kaynakta okumak için tıklayın ↗</a></div>`;
+      }
+    } catch(e) {
+      body.innerHTML = summaryHtml || `<div class="dp-no-body">Yüklenirken hata oluştu.</div>`;
+    }
+  } else {
+    body.innerHTML = summaryHtml || `<div class="dp-no-body">URL mevcut değil.</div>`;
+  }
+}
+
+function closeDetail() {
+  document.getElementById("detailPanel").classList.remove("open");
+  detailArticle = null;
+}
+
+function dpToggleBasket() {
+  if (!detailArticle) return;
+  toggleSel(detailArticle.id);
+  dpRefreshBasketBtn();
+}
+
+function dpRefreshBasketBtn() {
+  if (!detailArticle) return;
+  const inBasket = selectedIds.has(detailArticle.id);
+  const btn = document.getElementById("dpBasketBtn");
+  btn.textContent = inBasket ? "✓ Sepette" : "+ Sepete Ekle";
+  btn.className   = inBasket ? "btn btn-ghost btn-sm" : "btn btn-amber btn-sm";
+}
+
+
 function showOv(t,s){document.getElementById("ovTitle").textContent=t;document.getElementById("ovSub").textContent=s;document.getElementById("overlay").classList.add("show")}
 function hideOv(){document.getElementById("overlay").classList.remove("show")}
 let _tt; function toast(m,t){const e=document.getElementById("toast");e.textContent=m;e.className=`toast show ${t}`;clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove("show"),4000)}

@@ -283,6 +283,23 @@ def api_translate_text():
         "author":     author,
     })
 
+@app.route("/api/article", methods=["POST"])
+def api_article():
+    """Fetch full article text for detail view."""
+    url = request.json.get("url", "")
+    if not url:
+        return jsonify({"error": "URL gerekli"}), 400
+    body = extract_full_text(url)
+    return jsonify({"body": body})
+
+@app.route("/api/fetch-text", methods=["POST"])
+def api_fetch_text():
+    url = request.json.get("url","").strip()
+    if not url:
+        return jsonify({"text":""})
+    text = extract_full_text(url)
+    return jsonify({"text": text})
+
 @app.route("/api/download/<filename>")
 def api_download(filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
@@ -291,4 +308,4 @@ def api_download(filename):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(debug=True, port=5000)
