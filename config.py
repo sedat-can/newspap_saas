@@ -5,7 +5,7 @@
 # ============================================================
 import os
 DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "YOUR_DEEPL_API_KEY_HERE")                        # Turkish
-
+TARGET_LANGUAGE = "TR"
 RSS_FEEDS = [
     {"name": "Reuters",             "url": "https://feeds.reuters.com/reuters/topNews"},
     {"name": "BBC News",            "url": "http://feeds.bbci.co.uk/news/rss.xml"},
