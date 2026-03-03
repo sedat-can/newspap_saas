@@ -3,9 +3,8 @@
 #  Replace the example RSS feed URLs below with your 17 sites.
 #  Each entry: { "name": "Display Name", "url": "RSS Feed URL" }
 # ============================================================
-
-DEEPL_API_KEY = "c0c514b4-b812-4943-970a-076885bf1ff1:fx"   # <-- paste your DeepL API key here
-TARGET_LANGUAGE = "TR"                        # Turkish
+import os
+DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "YOUR_DEEPL_API_KEY_HERE")                        # Turkish
 
 RSS_FEEDS = [
     {"name": "Reuters",             "url": "https://feeds.reuters.com/reuters/topNews"},
