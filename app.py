@@ -1,4 +1,5 @@
-import os, uuid, time, json, feedparser, trafilatura, deepl
+import os, uuid, time, json, feedparser, deepl, requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_file
 from docx import Document
@@ -51,12 +52,23 @@ def fetch_feed(source):
 
 def extract_full_text(url):
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if downloaded:
-            return trafilatura.extract(downloaded, include_comments=False, include_tables=False) or ""
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; PressFlow/1.0)"}
+        r = requests.get(url, timeout=10, headers=headers)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "lxml")
+        # Remove noise
+        for tag in soup(["script","style","nav","header","footer","aside","figure","iframe","noscript"]):
+            tag.decompose()
+        # Try article body first
+        article = soup.find("article") or soup.find(class_=lambda c: c and any(x in str(c).lower() for x in ["article","content","body","story","post"]))
+        target = article if article else soup.find("body")
+        if not target:
+            return ""
+        paragraphs = [p.get_text(" ", strip=True) for p in target.find_all("p") if len(p.get_text(strip=True)) > 40]
+        return "\n\n".join(paragraphs)
     except Exception as e:
         print(f"[EXTRACT] {url}: {e}")
-    return ""
+        return ""
 
 def translate_paragraphs(translator, text):
     if not text or not text.strip():
