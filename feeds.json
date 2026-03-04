@@ -1,103 +1,37 @@
 [
   {
-    "name": "Reuters",
-    "url": "https://feeds.reuters.com/reuters/topNews",
+    "name": "Le Monde diplomatique",
+    "url": "http://mondediplo.com/backend",
     "enabled": true,
     "builtin": true
   },
   {
-    "name": "BBC News",
-    "url": "http://feeds.bbci.co.uk/news/rss.xml",
+    "name": "Monthly Review",
+    "url": "http://monthlyreview.org/feed",
     "enabled": true,
     "builtin": true
   },
   {
-    "name": "Al Jazeera",
-    "url": "https://www.aljazeera.com/xml/rss/all.xml",
+    "name": "Vox",
+    "url": "http://www.vox.com/rss/index.xml",
     "enabled": true,
     "builtin": true
   },
   {
-    "name": "AP News",
-    "url": "https://rsshub.app/apnews/topics/apf-topnews",
+    "name": "The Nation",
+    "url": "http://www.thenation.com/rss/articles",
     "enabled": true,
     "builtin": true
   },
   {
-    "name": "The Guardian",
-    "url": "https://www.theguardian.com/world/rss",
+    "name": "Jacobin",
+    "url": "http://jacobinmag.com/feed/",
     "enabled": true,
     "builtin": true
   },
   {
-    "name": "DW News",
-    "url": "https://rss.dw.com/rdf/rss-en-all",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "France 24",
-    "url": "https://www.france24.com/en/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Euronews",
-    "url": "https://www.euronews.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 9",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 10",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 11",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 12",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 13",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 14",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 15",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 16",
-    "url": "https://example.com/rss",
-    "enabled": true,
-    "builtin": true
-  },
-  {
-    "name": "Site 17",
-    "url": "https://example.com/rss",
+    "name": "Tribune",
+    "url": "https://tribunemag.co.uk/feed/",
     "enabled": true,
     "builtin": true
   }
