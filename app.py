@@ -8,16 +8,26 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from config import RSS_FEEDS, DEEPL_API_KEY, TARGET_LANGUAGE
 
 # ── RAG system ────────────────────────────────────────────────────────────────
-RAG_ENABLED = False  # Temporarily disabled
-try:
-    if os.environ.get("DATABASE_URL") and os.environ.get("ANTHROPIC_API_KEY"):
+RAG_ENABLED = bool(os.environ.get("DATABASE_URL") and os.environ.get("ANTHROPIC_API_KEY"))
+if RAG_ENABLED:
+    try:
         from rag import init_db, store_article_translations, rag_translate_paragraph, get_stats, add_term, get_terminology
         init_db()
-        RAG_ENABLED = True
         print("[APP] RAG system initialized ✓")
-except Exception as e:
-    print(f"[APP] RAG init failed: {e}")
-    RAG_ENABLED = False
+    except Exception as e:
+        print(f"[APP] RAG init failed: {e}")
+        RAG_ENABLED = False
+else:
+    print("[APP] RAG disabled — set DATABASE_URL and ANTHROPIC_API_KEY to enable")
+
+app = Flask(__name__)
+OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
+FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
+FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 # ── Persistent feed storage ──────────────────────────────────────────────────
 
 def load_feeds():
@@ -362,4 +372,4 @@ def api_download(filename):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(debug=True, port=5000)
