@@ -7,7 +7,23 @@ from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from config import RSS_FEEDS, DEEPL_API_KEY, TARGET_LANGUAGE
 
+# ── RAG system ────────────────────────────────────────────────────────────────
+RAG_ENABLED = bool(os.environ.get("DATABASE_URL") and os.environ.get("ANTHROPIC_API_KEY"))
+if RAG_ENABLED:
+    try:
+        from rag import init_db, store_article_translations, rag_translate_paragraph, get_stats, add_term, get_terminology
+        init_db()
+        print("[APP] RAG system initialized ✓")
+    except Exception as e:
+        print(f"[APP] RAG init failed: {e}")
+        RAG_ENABLED = False
+else:
+    print("[APP] RAG disabled — set DATABASE_URL and ANTHROPIC_API_KEY to enable")
+
 app = Flask(__name__)
+OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
+FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
 FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -70,15 +86,21 @@ def extract_full_text(url):
         print(f"[EXTRACT] {url}: {e}")
         return ""
 
-def translate_paragraphs(translator, text):
+def translate_paragraphs(translator, text, source="", author=""):
     if not text or not text.strip():
         return []
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     result = []
     for para in paragraphs:
         try:
-            tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE)
-            result.append({"original": para, "translated": tr.text})
+            # Step 1: DeepL base translation
+            deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
+            # Step 2: RAG improvement (if enabled)
+            if RAG_ENABLED:
+                final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
+            else:
+                final_tr = deepl_tr
+            result.append({"original": para, "translated": final_tr})
             time.sleep(0.05)
         except:
             result.append({"original": para, "translated": para})
@@ -257,7 +279,13 @@ def api_translate():
         if not body: body = art.get("summary","")
         try: title_tr = translator.translate_text(art["title"], target_lang=TARGET_LANGUAGE).text
         except: title_tr = art["title"]
-        results.append({**art, "title_tr": title_tr, "paragraphs": translate_paragraphs(translator, body)})
+        paragraphs = translate_paragraphs(translator, body, source=art.get("source",""), author=art.get("author",""))
+        article_result = {**art, "title_tr": title_tr, "paragraphs": paragraphs}
+        results.append(article_result)
+        # Store in RAG database
+        if RAG_ENABLED:
+            try: store_article_translations(article_result)
+            except Exception as e: print(f"[RAG] Store error: {e}")
 
     filename = build_docx(results)
     return jsonify({"filename": filename, "articles": results})
@@ -312,6 +340,30 @@ def api_fetch_text():
     text = extract_full_text(url)
     return jsonify({"text": text})
 
+@app.route("/api/rag/stats")
+def api_rag_stats():
+    if not RAG_ENABLED:
+        return jsonify({"enabled": False})
+    return jsonify({"enabled": True, **get_stats()})
+
+@app.route("/api/rag/terminology", methods=["GET"])
+def api_get_terms():
+    if not RAG_ENABLED:
+        return jsonify({"terms": {}})
+    return jsonify({"terms": get_terminology()})
+
+@app.route("/api/rag/terminology", methods=["POST"])
+def api_add_term():
+    if not RAG_ENABLED:
+        return jsonify({"error": "RAG not enabled"}), 400
+    data = request.json
+    term_orig = data.get("term_orig","").strip()
+    term_tr   = data.get("term_tr","").strip()
+    if not term_orig or not term_tr:
+        return jsonify({"error": "Both fields required"}), 400
+    add_term(term_orig, term_tr, data.get("source",""))
+    return jsonify({"ok": True})
+
 @app.route("/api/download/<filename>")
 def api_download(filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
@@ -320,4 +372,4 @@ def api_download(filename):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(debug=True, port=5000)
