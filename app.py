@@ -8,26 +8,16 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from config import RSS_FEEDS, DEEPL_API_KEY, TARGET_LANGUAGE
 
 # ── RAG system ────────────────────────────────────────────────────────────────
-RAG_ENABLED = bool(os.environ.get("DATABASE_URL") and os.environ.get("ANTHROPIC_API_KEY"))
-if RAG_ENABLED:
-    try:
+RAG_ENABLED = False  # Temporarily disabled
+try:
+    if os.environ.get("DATABASE_URL") and os.environ.get("ANTHROPIC_API_KEY"):
         from rag import init_db, store_article_translations, rag_translate_paragraph, get_stats, add_term, get_terminology
         init_db()
+        RAG_ENABLED = True
         print("[APP] RAG system initialized ✓")
-    except Exception as e:
-        print(f"[APP] RAG init failed: {e}")
-        RAG_ENABLED = False
-else:
-    print("[APP] RAG disabled — set DATABASE_URL and ANTHROPIC_API_KEY to enable")
-
-app = Flask(__name__)
-OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
-FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
-FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
+except Exception as e:
+    print(f"[APP] RAG init failed: {e}")
+    RAG_ENABLED = False
 # ── Persistent feed storage ──────────────────────────────────────────────────
 
 def load_feeds():
