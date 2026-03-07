@@ -2,7 +2,8 @@
 #  YAPILANDIRMA — Feedly OPML'den otomatik oluşturuldu
 # ============================================================
 
-DEEPL_API_KEY = "YOUR_DEEPL_API_KEY_HERE"   # <-- DeepL API anahtarını buraya yapıştır
+import os
+DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "") 
 TARGET_LANGUAGE = "TR"                        # Türkçe
 
 RSS_FEEDS = [
