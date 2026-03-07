@@ -1,7 +1,8 @@
 import os, uuid, time, json, feedparser, deepl, requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-from flask import Flask, render_template, jsonify, request, send_file
+from flask import Flask, render_template, jsonify, request, send_file, Response
+from functools import wraps
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -22,6 +23,30 @@ else:
 
 app = Flask(__name__)
 OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
+
+# ── Basic Auth ────────────────────────────────────────────────────────────────
+APP_USERNAME = os.environ.get("APP_USERNAME", "admin")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+def check_auth(username, password):
+    if not APP_PASSWORD:
+        return True  # No password set, open access
+    return username == APP_USERNAME and password == APP_PASSWORD
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not APP_PASSWORD:
+            return f(*args, **kwargs)
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return Response(
+                "Giriş gerekli", 401,
+                {"WWW-Authenticate": 'Basic realm="Pressflow"'}
+            )
+        return f(*args, **kwargs)
+    return decorated
+
 FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
@@ -309,6 +334,7 @@ def compute_bleu(reference, hypothesis):
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
+@requires_auth
 def index():
     return render_template("index.html")
 
