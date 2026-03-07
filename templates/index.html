@@ -583,8 +583,8 @@ input[type=range].ts::-webkit-slider-thumb{
     <div class="topbar-title" id="topbarTitle">Haber Çevirici</div>
     <div class="sdot" id="sdot"></div>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <button onclick="setLang('tr')" id="langTR" style="font-size:11px;font-weight:700;padding:3px 8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;background:rgba(255,255,255,.15);color:white;cursor:pointer">TR</button>
-      <button onclick="setLang('en')" id="langEN" style="font-size:11px;font-weight:700;padding:3px 8px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:transparent;color:rgba(255,255,255,.5);cursor:pointer">EN</button>
+      <button onclick="setLang('tr')" id="langTR" style="font-size:11px;font-weight:700;padding:3px 8px;border:1px solid var(--border2);border-radius:4px;background:var(--blue);color:white;cursor:pointer">TR</button>
+      <button onclick="setLang('en')" id="langEN" style="font-size:11px;font-weight:700;padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer">EN</button>
     </div>
     <div class="hstat" id="hstat">yükleniyor…</div>
   </div>
@@ -1299,10 +1299,10 @@ function t(key) {
 function applyLang() {
   const L = LANG[currentLang];
   // Active/inactive buttons
-  document.getElementById("langTR").style.background = currentLang==="tr" ? "rgba(255,255,255,.15)" : "transparent";
-  document.getElementById("langTR").style.color = currentLang==="tr" ? "white" : "rgba(255,255,255,.5)";
-  document.getElementById("langEN").style.background = currentLang==="en" ? "rgba(255,255,255,.15)" : "transparent";
-  document.getElementById("langEN").style.color = currentLang==="en" ? "white" : "rgba(255,255,255,.5)";
+  document.getElementById("langTR").style.background = currentLang==="tr" ? "var(--blue)" : "transparent";
+  document.getElementById("langTR").style.color = currentLang==="tr" ? "white" : "var(--muted)";
+  document.getElementById("langEN").style.background = currentLang==="en" ? "var(--blue)" : "transparent";
+  document.getElementById("langEN").style.color = currentLang==="en" ? "white" : "var(--muted)";
 
   // Topbar
   document.getElementById("topbarTitle").textContent = L.appTitle;
