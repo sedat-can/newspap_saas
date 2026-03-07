@@ -28,22 +28,111 @@ OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
 FEEDS_FILE  = os.path.join(os.path.dirname(__file__), "feeds.json")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# ── Persistent feed storage ──────────────────────────────────────────────────
+# ── Persistent feed storage (PostgreSQL) ─────────────────────────────────────
+
+def get_db():
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return None
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        return conn
+    except Exception as e:
+        print(f"[DB] Connection error: {e}")
+        return None
+
+def init_feeds_table():
+    conn = get_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS feeds (
+                id      SERIAL PRIMARY KEY,
+                name    TEXT NOT NULL,
+                url     TEXT UNIQUE NOT NULL,
+                enabled BOOLEAN DEFAULT TRUE,
+                builtin BOOLEAN DEFAULT FALSE,
+                added_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[DB] init_feeds_table error: {e}")
 
 def load_feeds():
-    """Load user-managed feeds from JSON. Merge with config on first run."""
+    """Load feeds from PostgreSQL. Falls back to JSON then config."""
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            init_feeds_table()
+            cur.execute("SELECT name, url, enabled, builtin FROM feeds ORDER BY id")
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            if rows:
+                return [dict(r) for r in rows]
+            # First run: seed from config
+            feeds = [{"name": s["name"], "url": s["url"], "enabled": True, "builtin": True}
+                     for s in RSS_FEEDS]
+            save_feeds(feeds)
+            return feeds
+        except Exception as e:
+            print(f"[DB] load_feeds error: {e}")
+
+    # Fallback: JSON
     if os.path.exists(FEEDS_FILE):
         with open(FEEDS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    # First run: seed from config
     feeds = [{"name": s["name"], "url": s["url"], "enabled": True, "builtin": True}
              for s in RSS_FEEDS]
     save_feeds(feeds)
     return feeds
 
 def save_feeds(feeds):
+    """Save feeds to PostgreSQL. Falls back to JSON."""
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            init_feeds_table()
+            for feed in feeds:
+                cur.execute("""
+                    INSERT INTO feeds (name, url, enabled, builtin)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (url) DO UPDATE
+                    SET name=EXCLUDED.name, enabled=EXCLUDED.enabled
+                """, (feed["name"], feed["url"], feed.get("enabled", True), feed.get("builtin", False)))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return
+        except Exception as e:
+            print(f"[DB] save_feeds error: {e}")
+
+    # Fallback: JSON
     with open(FEEDS_FILE, "w", encoding="utf-8") as f:
         json.dump(feeds, f, ensure_ascii=False, indent=2)
+
+def delete_feed_from_db(url):
+    """Delete a feed from PostgreSQL by URL."""
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM feeds WHERE url = %s", (url,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"[DB] delete_feed error: {e}")
+    return False
 
 # ── Article helpers ──────────────────────────────────────────────────────────
 
@@ -240,9 +329,14 @@ def api_toggle_feed():
 
 @app.route("/api/feeds/delete", methods=["POST"])
 def api_delete_feed():
+    url = request.json.get("url","")
     name = request.json.get("name","")
+    # Delete from PostgreSQL
+    if url:
+        delete_feed_from_db(url)
+    # Also update in-memory list
     feeds = load_feeds()
-    feeds = [f for f in feeds if f["name"] != name]
+    feeds = [f for f in feeds if f["name"] != name and f.get("url","") != url]
     save_feeds(feeds)
     return jsonify({"ok": True})
 
@@ -358,6 +452,58 @@ def api_add_term():
     add_term(term_orig, term_tr, data.get("source",""))
     return jsonify({"ok": True})
 
+
+@app.route("/api/analytics")
+def api_analytics():
+    """Evaluation dashboard — works with DATABASE_URL even without RAG."""
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        return jsonify({
+            "rag_enabled": False, "archive_total": 0,
+            "translations_total": 0, "sources": [],
+            "recent": [], "terminology_count": 0,
+        })
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        cur  = conn.cursor()
+
+        archive_total = 0
+        try:
+            cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive")
+            archive_total = cur.fetchone()["c"]
+        except Exception: pass
+
+        translations_total, sources, recent, terminology_count = 0, [], [], 0
+        try:
+            cur.execute("SELECT COUNT(*) as c FROM translations")
+            translations_total = cur.fetchone()["c"]
+            cur.execute("SELECT source, COUNT(*) as count FROM translations GROUP BY source ORDER BY count DESC LIMIT 10")
+            sources = [dict(r) for r in cur.fetchall()]
+            cur.execute("SELECT source, author, title_orig, title_tr, created_at FROM translations ORDER BY created_at DESC LIMIT 10")
+            recent = [dict(r) for r in cur.fetchall()]
+            for r in recent:
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].strftime("%d.%m.%Y %H:%M")
+        except Exception: pass
+
+        try:
+            cur.execute("SELECT COUNT(*) as c FROM terminology")
+            terminology_count = cur.fetchone()["c"]
+        except Exception: pass
+
+        cur.close(); conn.close()
+        return jsonify({
+            "rag_enabled": RAG_ENABLED,
+            "archive_total": archive_total,
+            "translations_total": translations_total,
+            "sources": sources,
+            "recent": recent,
+            "terminology_count": terminology_count,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 @app.route("/api/download/<filename>")
 def api_download(filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
@@ -366,4 +512,4 @@ def api_download(filename):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(debug=True, port=5000)
