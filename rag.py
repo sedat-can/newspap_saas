@@ -85,6 +85,20 @@ def init_db():
         );
     """)
 
+    # RAG retrieval metrics table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS rag_metrics (
+            id              SERIAL PRIMARY KEY,
+            source          TEXT,
+            author          TEXT,
+            results_found   INTEGER DEFAULT 0,
+            avg_similarity  FLOAT DEFAULT 0,
+            max_similarity  FLOAT DEFAULT 0,
+            hit             BOOLEAN DEFAULT FALSE,
+            created_at      TIMESTAMPTZ DEFAULT NOW()
+        );
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -239,7 +253,28 @@ def retrieve_similar(
             results.append({**dict(row), "score": score})
 
         results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:top_k]
+        final = results[:top_k]
+
+        # Log retrieval metrics
+        try:
+            similarities = [r["similarity"] for r in rows]
+            avg_sim = sum(similarities) / len(similarities) if similarities else 0
+            max_sim = max(similarities) if similarities else 0
+            hit = len(final) > 0
+
+            conn2 = get_conn()
+            cur2  = conn2.cursor()
+            cur2.execute("""
+                INSERT INTO rag_metrics (source, author, results_found, avg_similarity, max_similarity, hit)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (source, author, len(final), round(avg_sim, 4), round(max_sim, 4), hit))
+            conn2.commit()
+            cur2.close()
+            conn2.close()
+        except Exception as me:
+            print(f"[METRICS] Error: {me}")
+
+        return final
 
     except Exception as e:
         print(f"[RETRIEVE] Error: {e}")

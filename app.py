@@ -292,6 +292,20 @@ def build_text_docx(title, source, author, paragraphs):
     doc.save(os.path.join(OUTPUT_DIR, filename))
     return filename
 
+# ── BLEU Score helper ────────────────────────────────────────────────────────
+
+def compute_bleu(reference, hypothesis):
+    """Simple BLEU-1 score between two strings."""
+    import re
+    def tokenize(s):
+        return re.findall(r'\w+', s.lower())
+    ref_tokens  = set(tokenize(reference))
+    hyp_tokens  = tokenize(hypothesis)
+    if not hyp_tokens:
+        return 0.0
+    matches = sum(1 for t in hyp_tokens if t in ref_tokens)
+    return round(matches / len(hyp_tokens) * 100, 1)
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route("/")

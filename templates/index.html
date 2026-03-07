@@ -259,6 +259,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 
 /* TTS standalone */
 .tts-view{display:none;flex-direction:column;flex:1;overflow:hidden}
+.analytics-view{display:none;flex-direction:column;flex:1;overflow:hidden}
 .tts-view.active{display:flex}
 .tts-notice{
   margin:16px 20px 0;padding:10px 14px;border-radius:var(--r-md);
@@ -588,6 +589,7 @@ input[type=range].ts::-webkit-slider-thumb{
     <div class="tab active" id="ctFeed" onclick="switchTab('feed')">📰 RSS Haberleri</div>
     <div class="tab" id="ctText" onclick="switchTab('text')">📝 Metin Yapıştır</div>
     <div class="tab" id="ctTts"  onclick="switchTab('tts')">🔊 Sesli Oku</div>
+    <div class="tab" id="ctAnalytics" onclick="switchTab('analytics')">📊 Analytics</div>
   </div>
 
   <div class="content-wrap">
@@ -845,13 +847,17 @@ function filterBySource(n){activeSource=n;renderSources();filterArticles()}
 
 /* ═══════════ TABS ═══════════ */
 function switchTab(tab){
-  ["feed","text","tts"].forEach(t=>{
-    const el=document.getElementById("ct"+t.charAt(0).toUpperCase()+t.slice(1));
+  ["feed","text","tts","analytics"].forEach(t=>{
+    const id="ct"+t.charAt(0).toUpperCase()+t.slice(1);
+    const el=document.getElementById(id);
     if(el)el.classList.toggle("active",t===tab);
   });
   document.getElementById("feedView").style.display=tab==="feed"?"flex":"none";
   document.getElementById("textView").classList.toggle("active",tab==="text");
   document.getElementById("ttsView").classList.toggle("active",tab==="tts");
+  const av=document.getElementById("analyticsView");
+  if(av){av.style.display=tab==="analytics"?"flex":"none";}
+  if(tab==="analytics")loadAnalytics();
 }
 
 /* ═══════════ FETCH ═══════════ */
@@ -1114,6 +1120,84 @@ function ttsSetLang(l){TTS.lang=l;ttsStop();document.getElementById("ttsLangOrig
 function ttsRateChange(){TTS.rate=parseFloat(document.getElementById("vTtsRate").value);document.getElementById("vTtsRateVal").textContent=TTS.rate.toFixed(1)+"×";if(TTS.playing){const i=TTS.idx;speechSynthesis.cancel();ttsSpeak(i)}}
 function ttsVolChange(){TTS.vol=parseFloat(document.getElementById("vTtsVol").value);document.getElementById("vTtsVolVal").textContent=Math.round(TTS.vol*100)+"%"}
 function ttsVoiceChange(){TTS.voice=document.getElementById("vTtsVoice").value;if(TTS.playing){const i=TTS.idx;speechSynthesis.cancel();ttsSpeak(i)}}
+
+
+/* ═══════════ ANALYTICS ═══════════ */
+async function loadAnalytics(){
+  try{
+    const d=await(await fetch("/api/analytics")).json();
+    
+    // Stat cards
+    document.getElementById("statArchive").textContent=d.archive_total?.toLocaleString()||"0";
+    document.getElementById("statTranslations").textContent=d.translations_total?.toLocaleString()||"0";
+    document.getElementById("statTerms").textContent=d.terminology_count?.toLocaleString()||"0";
+    document.getElementById("statRag").innerHTML=d.rag_enabled
+      ? '<span style="color:var(--green)">✅ Aktif</span>'
+      : '<span style="color:var(--amber)">⏸ Bekliyor</span><div style="font-size:10px;color:var(--muted);margin-top:2px">ANTHROPIC_API_KEY gerekli</div>';
+
+    // Source bars
+    const sb=document.getElementById("sourceBars");
+    if(d.sources&&d.sources.length>0){
+      const max=Math.max(...d.sources.map(s=>s.count));
+      sb.innerHTML=d.sources.map(s=>`
+        <div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+            <span style="font-weight:500;color:var(--text)">${esc(s.source||"Bilinmiyor")}</span>
+            <span style="color:var(--muted);font-family:var(--mono)">${s.count}</span>
+          </div>
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${Math.round(s.count/max*100)}%;background:var(--blue);border-radius:3px;transition:width .5s"></div>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      sb.innerHTML='<div style="color:var(--muted);font-size:12px">Henüz çeviri yapılmadı. İlk çeviriyi yap!</div>';
+    }
+
+    // RAG metrics
+    const hitRate = d.rag_hit_rate || 0;
+    const simScore = d.rag_avg_similarity || 0;
+    document.getElementById("ragHitRate").textContent = hitRate ? hitRate.toFixed(1)+"%" : "—";
+    document.getElementById("ragSimScore").textContent = simScore ? simScore.toFixed(1)+"%" : "—";
+    document.getElementById("ragHitBar").style.width = hitRate + "%";
+    document.getElementById("ragSimBar").style.width = simScore + "%";
+    document.getElementById("ragTotalCalls").textContent = d.rag_total_calls || 0;
+
+    // Daily chart
+    const dc = document.getElementById("dailyChart");
+    if(d.daily && d.daily.length > 0){
+      const maxCount = Math.max(...d.daily.map(x=>x.count));
+      dc.innerHTML = d.daily.map(x=>`
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+          <div style="font-size:9px;font-family:var(--mono);color:var(--muted)">${x.count}</div>
+          <div style="width:100%;background:var(--blue);border-radius:2px 2px 0 0;min-height:2px;height:${Math.round(x.count/maxCount*60)}px;transition:height .5s"></div>
+          <div style="font-size:8px;color:var(--muted2);transform:rotate(-45deg);transform-origin:top left;margin-top:4px;white-space:nowrap">${x.day.slice(5)}</div>
+        </div>
+      `).join("");
+    } else {
+      dc.innerHTML='<div style="color:var(--muted);font-size:11px;align-self:center">Henüz çeviri yapılmadı</div>';
+    }
+
+    // Recent with BLEU
+    const rl=document.getElementById("recentList");
+    if(d.recent&&d.recent.length>0){
+      rl.innerHTML=d.recent.map(r=>`
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.title_tr||r.title_orig||"—")}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(r.source||"")} ${r.author?'· '+esc(r.author):''}</div>
+          </div>
+          <div style="font-size:10px;color:var(--muted2);white-space:nowrap;font-family:var(--mono)">${r.created_at||""}</div>
+        </div>
+      `).join("");
+    } else {
+      rl.innerHTML='<div style="color:var(--muted);font-size:12px">Henüz çeviri yok.</div>';
+    }
+
+  }catch(e){
+    console.error("Analytics error:",e);
+  }
+}
 
 /* ═══════════ UTILS ═══════════ */
 function showOv(t,s){document.getElementById("ovTitle").textContent=t;document.getElementById("ovSub").textContent=s;document.getElementById("overlay").classList.add("show")}
