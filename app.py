@@ -191,12 +191,6 @@ def build_text_docx(title, source, author, paragraphs):
     doc.add_paragraph()
 
     for chunk in paragraphs:
-        # Original
-        op = doc.add_paragraph(chunk.get("original",""))
-        for r in op.runs:
-            r.font.size = Pt(10); r.font.color.rgb = RGBColor(0x88,0x88,0xAA)
-            r.italic = True
-        # Translated
         tp2 = doc.add_paragraph(chunk.get("translated",""))
         for r in tp2.runs: r.font.size = Pt(11)
         doc.add_paragraph()
