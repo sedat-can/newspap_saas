@@ -334,7 +334,6 @@ def compute_bleu(reference, hypothesis):
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
-@requires_auth
 def index():
     return render_template("index.html")
 
@@ -343,6 +342,7 @@ def api_get_feeds():
     return jsonify({"feeds": load_feeds()})
 
 @app.route("/api/feeds/add", methods=["POST"])
+@requires_auth
 def api_add_feed():
     data = request.json
     name = data.get("name","").strip()
@@ -368,6 +368,7 @@ def api_toggle_feed():
     return jsonify({"ok": True, "feeds": feeds})
 
 @app.route("/api/feeds/delete", methods=["POST"])
+@requires_auth
 def api_delete_feed():
     url = request.json.get("url","")
     name = request.json.get("name","")
@@ -381,6 +382,7 @@ def api_delete_feed():
     return jsonify({"ok": True})
 
 @app.route("/api/fetch", methods=["POST"])
+@requires_auth
 def api_fetch():
     feeds = [f for f in load_feeds() if f.get("enabled", True)]
     all_articles = []
@@ -389,6 +391,7 @@ def api_fetch():
     return jsonify({"articles": all_articles, "count": len(all_articles)})
 
 @app.route("/api/translate", methods=["POST"])
+@requires_auth
 def api_translate():
     data     = request.json
     selected = data.get("articles", [])
@@ -419,6 +422,7 @@ def api_translate():
     return jsonify({"filename": filename, "articles": results})
 
 @app.route("/api/translate-text", methods=["POST"])
+@requires_auth
 def api_translate_text():
     """Translate a manually pasted block of text."""
     data   = request.json
@@ -545,6 +549,7 @@ def api_analytics():
         return jsonify({"error": str(e)})
 
 @app.route("/api/download/<filename>")
+@requires_auth
 def api_download(filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
     if not os.path.exists(filepath):
