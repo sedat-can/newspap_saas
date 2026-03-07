@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<opml version="1.0">
+    <head>
+        <title>sedat subscriptions in feedly Cloud</title>
+    </head>
+    <body>
+        <outline text="french_left" title="french_left">
+            <outline type="rss" text="Le Monde diplomatique - English edition" title="Le Monde diplomatique - English edition" xmlUrl="http://mondediplo.com/backend" htmlUrl="https://mondediplo.com/"/>
+        </outline>
+        <outline text="Usa_left" title="Usa_left">
+            <outline type="rss" text="Monthly Review" title="Monthly Review" xmlUrl="http://monthlyreview.org/feed" htmlUrl="https://monthlyreview.org/"/>
+            <outline type="rss" text="Vox" title="Vox" xmlUrl="http://www.vox.com/rss/index.xml" htmlUrl="https://www.vox.com"/>
+            <outline type="rss" text="Article | The Nation" title="Article | The Nation" xmlUrl="http://www.thenation.com/rss/articles" htmlUrl="https://www.thenation.com/article/"/>
+            <outline type="rss" text="Jacobin" title="Jacobin" xmlUrl="http://jacobinmag.com/feed/" htmlUrl="https://www.jacobinmag.com"/>
+        </outline>
+        <outline text="Left" title="Left">
+            <outline type="rss" text="Tribune" title="Tribune" xmlUrl="https://tribunemag.co.uk/feed/"/>
+        </outline>
+    </body>
+</opml>
