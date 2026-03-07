@@ -580,8 +580,12 @@ input[type=range].ts::-webkit-slider-thumb{
 <!-- ══ MAIN ══ -->
 <div class="main">
   <div class="topbar">
-    <div class="topbar-title">Haber Çevirici</div>
+    <div class="topbar-title" id="topbarTitle">Haber Çevirici</div>
     <div class="sdot" id="sdot"></div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <button onclick="setLang('tr')" id="langTR" style="font-size:11px;font-weight:700;padding:3px 8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;background:rgba(255,255,255,.15);color:white;cursor:pointer">TR</button>
+      <button onclick="setLang('en')" id="langEN" style="font-size:11px;font-weight:700;padding:3px 8px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:transparent;color:rgba(255,255,255,.5);cursor:pointer">EN</button>
+    </div>
     <div class="hstat" id="hstat">yükleniyor…</div>
   </div>
 
@@ -1198,6 +1202,150 @@ async function loadAnalytics(){
     console.error("Analytics error:",e);
   }
 }
+
+
+/* ═══════════ i18n ═══════════ */
+const LANG = {
+  tr: {
+    appTitle: "Haber Çevirici",
+    tabFeed: "📰 RSS Haberleri",
+    tabText: "📝 Metin Yapıştır",
+    tabTts: "🔊 Sesli Oku",
+    tabAnalytics: "📊 Analytics",
+    fetchBtn: "Haberleri Getir",
+    searchPlaceholder: "Başlıkta ara…",
+    selectAll: "Tümünü seç",
+    clear: "Temizle",
+    selected: "seçili",
+    emptyTitle: "Haberler bekleniyor",
+    emptyDesc: '"Haberleri Getir" düğmesine basarak tüm kaynaklardan son haberleri yükleyin.',
+    translateBtn: "Çevir",
+    downloadBtn: "İndir (.docx)",
+    addSource: "Kaynak Ekle",
+    newSource: "Yeni Kaynak",
+    sourceName: "Kaynak adı",
+    rssUrl: "RSS URL",
+    add: "Ekle",
+    cancel: "İptal",
+    loading: "yükleniyor…",
+    analyticsTitle: "📊 Evaluation Dashboard",
+    archivePara: "Arşiv Paragraf",
+    translationMemory: "Çeviri Hafızası",
+    terminology: "Terminoloji",
+    ragStatus: "RAG Durumu",
+    sourceBreakdown: "📰 Kaynak Dağılımı",
+    recentTranslations: "🕐 Son Çeviriler",
+    ragMetrics: "🤖 RAG Pipeline Metrikleri",
+    hitRate: "Hit Rate",
+    avgSimilarity: "Ort. Benzerlik",
+    totalQueries: "Toplam sorgu",
+    ragActive: "✅ Aktif",
+    ragWaiting: "⏸ Bekliyor",
+    noTranslations: "Henüz çeviri yapılmadı.",
+    dailyChart: "📈 Günlük Çeviri (Son 14 Gün)",
+  },
+  en: {
+    appTitle: "News Translator",
+    tabFeed: "📰 RSS Feed",
+    tabText: "📝 Paste Text",
+    tabTts: "🔊 Read Aloud",
+    tabAnalytics: "📊 Analytics",
+    fetchBtn: "Fetch News",
+    searchPlaceholder: "Search headlines…",
+    selectAll: "Select all",
+    clear: "Clear",
+    selected: "selected",
+    emptyTitle: "Waiting for news",
+    emptyDesc: 'Press "Fetch News" to load the latest articles from all sources.',
+    translateBtn: "Translate",
+    downloadBtn: "Download (.docx)",
+    addSource: "Add Source",
+    newSource: "New Source",
+    sourceName: "Source name",
+    rssUrl: "RSS URL",
+    add: "Add",
+    cancel: "Cancel",
+    loading: "loading…",
+    analyticsTitle: "📊 Evaluation Dashboard",
+    archivePara: "Archive Paragraphs",
+    translationMemory: "Translation Memory",
+    terminology: "Terminology",
+    ragStatus: "RAG Status",
+    sourceBreakdown: "📰 Source Breakdown",
+    recentTranslations: "🕐 Recent Translations",
+    ragMetrics: "🤖 RAG Pipeline Metrics",
+    hitRate: "Hit Rate",
+    avgSimilarity: "Avg Similarity",
+    totalQueries: "Total queries",
+    ragActive: "✅ Active",
+    ragWaiting: "⏸ Pending",
+    noTranslations: "No translations yet.",
+    dailyChart: "📈 Daily Translations (Last 14 Days)",
+  }
+};
+
+let currentLang = localStorage.getItem("lang") || "tr";
+
+function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem("lang", lang);
+  applyLang();
+}
+
+function t(key) {
+  return LANG[currentLang][key] || LANG.tr[key] || key;
+}
+
+function applyLang() {
+  const L = LANG[currentLang];
+  // Active/inactive buttons
+  document.getElementById("langTR").style.background = currentLang==="tr" ? "rgba(255,255,255,.15)" : "transparent";
+  document.getElementById("langTR").style.color = currentLang==="tr" ? "white" : "rgba(255,255,255,.5)";
+  document.getElementById("langEN").style.background = currentLang==="en" ? "rgba(255,255,255,.15)" : "transparent";
+  document.getElementById("langEN").style.color = currentLang==="en" ? "white" : "rgba(255,255,255,.5)";
+
+  // Topbar
+  document.getElementById("topbarTitle").textContent = L.appTitle;
+  document.getElementById("hstat").textContent = L.loading;
+
+  // Tabs
+  document.getElementById("ctFeed").textContent = L.tabFeed;
+  document.getElementById("ctText").textContent = L.tabText;
+  document.getElementById("ctTts").textContent = L.tabTts;
+  document.getElementById("ctAnalytics").textContent = L.tabAnalytics;
+
+  // Toolbar
+  const fetchBtn = document.querySelector('[onclick="fetchNews()"]');
+  if(fetchBtn) fetchBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4v5h.582M20 20v-5h-.581M4.582 9a8 8 0 0115.837 2M19.419 15a8 8 0 01-15.837-2"/></svg> ${L.fetchBtn}`;
+
+  const searchBox = document.getElementById("searchBox");
+  if(searchBox) searchBox.placeholder = L.searchPlaceholder;
+
+  // Empty state
+  const emptyH = document.querySelector(".empty-state h3");
+  const emptyP = document.querySelector(".empty-state p");
+  if(emptyH) emptyH.textContent = L.emptyTitle;
+  if(emptyP) emptyP.textContent = L.emptyDesc;
+
+  // Add source
+  const sbAddBtn = document.getElementById("sbAddToggle");
+  if(sbAddBtn) sbAddBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> ${L.addSource}`;
+
+  const afLabel = document.querySelector(".af-label");
+  if(afLabel) afLabel.textContent = L.newSource;
+
+  const afName = document.getElementById("afName");
+  if(afName) afName.placeholder = L.sourceName;
+  const afUrl = document.getElementById("afUrl");
+  if(afUrl) afUrl.placeholder = L.rssUrl;
+
+  // Analytics
+  const analyticsH2 = document.querySelector(".analytics-view h2");
+  if(analyticsH2) analyticsH2.textContent = L.analyticsTitle;
+}
+
+// Apply on load
+document.addEventListener("DOMContentLoaded", () => applyLang());
 
 /* ═══════════ UTILS ═══════════ */
 function showOv(t,s){document.getElementById("ovTitle").textContent=t;document.getElementById("ovSub").textContent=s;document.getElementById("overlay").classList.add("show")}
