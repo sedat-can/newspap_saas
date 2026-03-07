@@ -1,0 +1,10 @@
+scraper.py
+author_lookup.py
+feeds.json
+test.py
+haberler_20260307_110510.docx
+output/
+__pycache__/
+*.pyc
+venv/
+.env
