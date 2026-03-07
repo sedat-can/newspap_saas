@@ -484,7 +484,7 @@ def api_analytics():
 
         archive_total = 0
         try:
-            cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive")
+            cur.execute("SELECT COUNT(*) as c FROM news_archive")
             archive_total = cur.fetchone()["c"]
         except Exception: pass
 
