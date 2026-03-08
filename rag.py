@@ -99,22 +99,37 @@ def init_db():
         );
     """)
 
-    # Auto-migrate vector dim if needed
+    # Always ensure embedding column is correct 384-dim
+    # Drops old column (any dim) and recreates — safe because old embeddings
+    # from voyage/1024 model are incompatible with new 384-dim model anyway
     try:
         cur.execute("""
-            SELECT atttypmod FROM pg_attribute
-            JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
-            WHERE pg_class.relname='translations' AND pg_attribute.attname='embedding'
+            SELECT data_type, udt_name
+            FROM information_schema.columns
+            WHERE table_name='translations' AND column_name='embedding'
         """)
         row = cur.fetchone()
-        if row and row[0] != 384:
-            print("[RAG] Migrating vector dim → 384 ...")
-            cur.execute("ALTER TABLE translations DROP COLUMN IF EXISTS embedding;")
-            cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
-            cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
-            print("[RAG] Migration done ✓")
+        if row is None:
+            # Column doesn't exist yet — CREATE TABLE above will handle it
+            pass
+        else:
+            # Check actual dimension via pg_attribute
+            cur.execute("""
+                SELECT atttypmod FROM pg_attribute pa
+                JOIN pg_class pc ON pc.oid = pa.attrelid
+                WHERE pc.relname='translations' AND pa.attname='embedding'
+            """)
+            dim_row = cur.fetchone()
+            current_dim = dim_row[0] if dim_row else None
+            if current_dim != 384:
+                print(f"[RAG] Fixing embedding column (dim={current_dim}) → 384 ...")
+                cur.execute("ALTER TABLE translations DROP COLUMN embedding;")
+                cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
+                cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
+                print("[RAG] Column fixed ✓")
     except Exception as me:
-        print(f"[RAG] Migration: {me}")
+        print(f"[RAG] Migration error: {me}")
+
     conn.commit()
     cur.close()
     conn.close()
@@ -139,7 +154,6 @@ def _get_model():
             print(f"[EMBED] Load error: {e}")
     return _embed_model
 
-# Load at import — gunicorn --preload shares across workers
 try:
     _get_model()
 except Exception:
@@ -221,7 +235,7 @@ def store_translation(
 
 
 def _store_in_background(article: dict):
-    """Actual DB write — runs in background thread, never blocks HTTP response."""
+    """Runs in background thread — embedding + DB write, never blocks HTTP."""
     source     = article.get("source", "")
     author     = article.get("author", "")
     url        = article.get("url", "")
@@ -237,8 +251,6 @@ def _store_in_background(article: dict):
 
     orig_texts = [o for o, _ in valid]
     tr_texts   = [t for _, t in valid]
-
-    # Batch embed — slow on CPU but runs in background
     embeddings = get_embeddings_batch(orig_texts)
 
     try:
@@ -260,8 +272,9 @@ def _store_in_background(article: dict):
                         ON CONFLICT (url) DO NOTHING
                     """, (source,author,url,title_orig,title_tr,orig,tr))
                 saved += 1
-            except Exception as re:
-                print(f"[STORE] Row error: {re}")
+            except Exception as row_e:
+                conn.rollback()
+                print(f"[STORE] Row error: {row_e}")
         conn.commit(); cur.close(); conn.close()
         print(f"[STORE] Saved {saved}/{len(valid)} paragraphs — {source}")
     except Exception as e:
@@ -269,13 +282,9 @@ def _store_in_background(article: dict):
 
 
 def store_article_translations(article: dict):
-    """
-    Fire-and-forget: returns immediately, storage happens in background.
-    This prevents HTTP timeout during embedding on slow CPU.
-    """
+    """Fire-and-forget — returns immediately, storage in background thread."""
     import threading
-    t = threading.Thread(target=_store_in_background, args=(article,), daemon=True)
-    t.start()
+    threading.Thread(target=_store_in_background, args=(article,), daemon=True).start()
 
 
 # ── Retrieve ──────────────────────────────────────────────────────────────────
