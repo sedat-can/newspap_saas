@@ -410,11 +410,10 @@ Improve the translation using the examples and glossary above. Return ONLY the T
         client   = Anthropic(api_key=ANTHROPIC_KEY)
         response = client.messages.create(
             model      = CLAUDE_MODEL,
-            max_tokens = 600,
+            max_tokens = 1000,
             temperature = 0,
             system     = system_prompt,
             messages   = [{"role": "user", "content": user_prompt}],
-            timeout    = 15,
         )
         improved = response.content[0].text.strip()
         return improved if improved else deepl_tr
