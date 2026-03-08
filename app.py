@@ -214,16 +214,10 @@ def translate_paragraphs(translator, text, source="", author=""):
                 final_tr, rag_improved = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
             else:
                 final_tr, rag_improved = deepl_tr, False
-            result.append({
-                "original":    para,
-                "translated":  final_tr,
-                "deepl_tr":    deepl_tr,
-                "rag_tr":      final_tr if rag_improved else "",
-                "rag_improved": rag_improved,
-            })
+            result.append({"original": para, "translated": final_tr, "deepl_tr": deepl_tr, "rag_improved": rag_improved})
             time.sleep(0.05)
         except:
-            result.append({"original": para, "translated": para, "deepl_tr": "", "rag_tr": "", "rag_improved": False})
+            result.append({"original": para, "translated": para, "deepl_tr": "", "rag_improved": False})
     return result
 
 # ── DOCX builder ─────────────────────────────────────────────────────────────
@@ -542,38 +536,6 @@ def api_analytics():
             terminology_count = cur.fetchone()["c"]
         except Exception: pass
 
-        # Daily translations (last 14 days)
-        daily = []
-        try:
-            cur.execute("""
-                SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as day, COUNT(*) as count
-                FROM translations
-                WHERE created_at >= NOW() - INTERVAL '14 days'
-                GROUP BY DATE(created_at)
-                ORDER BY day ASC
-            """)
-            daily = [dict(r) for r in cur.fetchall()]
-        except Exception: pass
-
-        # RAG metrics — query rag_metrics table directly
-        rag_hit_rate, rag_avg_similarity, rag_total_calls, rag_claude_calls = 0, 0, 0, 0
-        try:
-            cur.execute("""
-                SELECT
-                    COUNT(*) as total,
-                    SUM(CASE WHEN hit THEN 1 ELSE 0 END) as hits,
-                    AVG(avg_similarity) as avg_sim
-                FROM rag_metrics
-            """)
-            row = cur.fetchone()
-            if row and row["total"]:
-                rag_total_calls    = int(row["total"])
-                rag_hit_rate       = round((row["hits"] or 0) / row["total"] * 100, 1)
-                rag_avg_similarity = round((row["avg_sim"] or 0) * 100, 1)
-            cur.execute("SELECT COUNT(*) as c FROM rag_metrics WHERE hit = TRUE")
-            rag_claude_calls = cur.fetchone()["c"] or 0
-        except Exception: pass
-
         cur.close(); conn.close()
         return jsonify({
             "rag_enabled": RAG_ENABLED,
@@ -582,11 +544,6 @@ def api_analytics():
             "sources": sources,
             "recent": recent,
             "terminology_count": terminology_count,
-            "daily": daily,
-            "rag_hit_rate": rag_hit_rate,
-            "rag_avg_similarity": rag_avg_similarity,
-            "rag_total_calls": rag_total_calls,
-            "rag_claude_calls": rag_claude_calls,
         })
     except Exception as e:
         return jsonify({"error": str(e)})

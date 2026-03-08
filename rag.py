@@ -24,7 +24,7 @@ from anthropic import Anthropic
 
 DATABASE_URL   = os.environ.get("DATABASE_URL", "")
 ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
-EMBED_MODEL    = "voyage-multilingual-2"   # Claude's multilingual embedding model
+EMBED_MODEL    = "paraphrase-multilingual-MiniLM-L12-v2"  # Local model, no API key needed
 CLAUDE_MODEL   = "claude-haiku-4-5-20251001"  # 10x cheaper than Sonnet
 TOP_K          = 5                          # How many similar examples to retrieve
 MIN_SIMILARITY = 0.72                       # Cosine similarity threshold (0-1)
@@ -50,7 +50,7 @@ def init_db():
     cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
     # Main translations table
-    # embedding is 1024-dim (Voyage multilingual model)
+    # embedding is 384-dim (sentence-transformers paraphrase-multilingual-MiniLM-L12-v2)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS translations (
             id          SERIAL PRIMARY KEY,
@@ -61,7 +61,7 @@ def init_db():
             title_tr    TEXT,
             orig_para   TEXT NOT NULL,               -- original paragraph
             tr_para     TEXT NOT NULL,               -- Turkish translation
-            embedding   vector(1024),                -- semantic vector
+            embedding   vector(384),                 -- sentence-transformers MiniLM dim
             created_at  TIMESTAMPTZ DEFAULT NOW()
         );
     """)
@@ -107,21 +107,34 @@ def init_db():
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
+# Lazy-load the embedding model once
+_embed_model = None
+
+def _get_model():
+    global _embed_model
+    if _embed_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _embed_model = SentenceTransformer(EMBED_MODEL)
+            print(f"[EMBED] Model loaded: {EMBED_MODEL}")
+        except ImportError:
+            print("[EMBED] sentence-transformers not installed. Run: pip install sentence-transformers")
+    return _embed_model
+
+
 def get_embedding(text: str) -> list[float] | None:
     """
-    Generate a semantic embedding vector for a text using Claude's API.
-    Falls back to None if API key is not set.
+    Generate a semantic embedding vector locally using sentence-transformers.
+    No API key needed. Model downloads once (~90MB) then runs offline.
     """
-    if not ANTHROPIC_KEY:
+    if not text or not text.strip():
         return None
     try:
-        client = Anthropic(api_key=ANTHROPIC_KEY)
-        # Voyage embeddings via Anthropic
-        response = client.embeddings.create(
-            model=EMBED_MODEL,
-            input=[text[:2000]],   # truncate to avoid token limits
-        )
-        return response.data[0].embedding
+        model = _get_model()
+        if model is None:
+            return None
+        vec = model.encode(text[:1000], normalize_embeddings=True)
+        return vec.tolist()
     except Exception as e:
         print(f"[EMBED] Error: {e}")
         return None
@@ -348,10 +361,9 @@ def rag_translate_paragraph(
     source:     str = "",
     author:     str = "",
     deepl_tr:   str = "",
-) -> tuple[str, bool]:
+) -> tuple:
     """
-    Smart RAG translation.
-    Returns (translated_text, was_rag_improved).
+    Smart RAG translation:
     - Only calls Claude when RAG has examples OR terminology matches
     - Falls back to DeepL otherwise (saves ~60-70% API cost)
     """

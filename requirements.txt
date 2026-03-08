@@ -9,4 +9,4 @@ psycopg2-binary>=2.9
 pgvector>=0.2
 anthropic>=0.25
 gunicorn>=21.0
-gevent>=23.0
+sentence-transformers>=2.7
