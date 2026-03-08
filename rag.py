@@ -24,7 +24,7 @@ from anthropic import Anthropic
 
 DATABASE_URL   = os.environ.get("DATABASE_URL", "")
 ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
-EMBED_MODEL    = "paraphrase-multilingual-MiniLM-L12-v2"  # Local model, no API key needed
+EMBED_MODEL    = "paraphrase-multilingual-MiniLM-L12-v2"  # Local, no API key
 CLAUDE_MODEL   = "claude-haiku-4-5-20251001"  # 10x cheaper than Sonnet
 TOP_K          = 5                          # How many similar examples to retrieve
 MIN_SIMILARITY = 0.72                       # Cosine similarity threshold (0-1)
@@ -50,7 +50,7 @@ def init_db():
     cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
     # Main translations table
-    # embedding is 384-dim (sentence-transformers paraphrase-multilingual-MiniLM-L12-v2)
+    # embedding is 384-dim (sentence-transformers MiniLM)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS translations (
             id          SERIAL PRIMARY KEY,
@@ -61,7 +61,7 @@ def init_db():
             title_tr    TEXT,
             orig_para   TEXT NOT NULL,               -- original paragraph
             tr_para     TEXT NOT NULL,               -- Turkish translation
-            embedding   vector(384),                 -- sentence-transformers MiniLM dim
+            embedding   vector(384),                -- semantic vector
             created_at  TIMESTAMPTZ DEFAULT NOW()
         );
     """)
@@ -99,11 +99,10 @@ def init_db():
         );
     """)
 
-    # ── Auto-migration: fix vector dimension if needed ──────────────────────
+    # Auto-migrate vector dimension if DB has old 1024-dim column
     try:
         cur.execute("""
-            SELECT atttypmod
-            FROM pg_attribute
+            SELECT atttypmod FROM pg_attribute
             JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
             WHERE pg_class.relname = 'translations'
               AND pg_attribute.attname = 'embedding'
@@ -111,13 +110,13 @@ def init_db():
         """)
         row = cur.fetchone()
         if row and row[0] != 384:
-            print(f"[RAG] Migrating embedding column from dim {row[0]} → 384 ...")
+            print(f"[RAG] Migrating vector dim {row[0]} → 384 ...")
             cur.execute("ALTER TABLE translations DROP COLUMN IF EXISTS embedding;")
             cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
             cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
             print("[RAG] Migration done ✓")
     except Exception as me:
-        print(f"[RAG] Migration check error: {me}")
+        print(f"[RAG] Migration check: {me}")
 
     conn.commit()
     cur.close()
@@ -127,7 +126,7 @@ def init_db():
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
-# Lazy-load the embedding model once
+# ── Embedding model — loaded once, reused forever ──────────────────────────
 _embed_model = None
 
 def _get_model():
@@ -138,26 +137,38 @@ def _get_model():
             _embed_model = SentenceTransformer(EMBED_MODEL)
             print(f"[EMBED] Model loaded: {EMBED_MODEL}")
         except ImportError:
-            print("[EMBED] sentence-transformers not installed. Run: pip install sentence-transformers")
+            print("[EMBED] Run: pip install sentence-transformers")
     return _embed_model
 
 
 def get_embedding(text: str) -> list[float] | None:
-    """
-    Generate a semantic embedding vector locally using sentence-transformers.
-    No API key needed. Model downloads once (~90MB) then runs offline.
-    """
+    """Single text → vector. Uses cached model."""
     if not text or not text.strip():
         return None
     try:
         model = _get_model()
         if model is None:
             return None
-        vec = model.encode(text[:1000], normalize_embeddings=True)
-        return vec.tolist()
+        return model.encode(text[:1000], normalize_embeddings=True).tolist()
     except Exception as e:
         print(f"[EMBED] Error: {e}")
         return None
+
+
+def get_embeddings_batch(texts: list[str]) -> list[list[float] | None]:
+    """Batch encode — much faster than calling one by one."""
+    if not texts:
+        return []
+    try:
+        model = _get_model()
+        if model is None:
+            return [None] * len(texts)
+        clean = [t[:1000] if t else "" for t in texts]
+        vecs = model.encode(clean, normalize_embeddings=True, batch_size=32, show_progress_bar=False)
+        return [v.tolist() for v in vecs]
+    except Exception as e:
+        print(f"[EMBED] Batch error: {e}")
+        return [None] * len(texts)
 
 
 # ── Store ─────────────────────────────────────────────────────────────────────
@@ -210,28 +221,57 @@ def store_translation(
 
 def store_article_translations(article: dict):
     """
-    Store all paragraphs of a translated article.
-    Called after translation completes.
+    Batch store all paragraphs — single DB connection, single batch embed call.
+    Much faster than storing one-by-one.
     """
     source     = article.get("source", "")
     author     = article.get("author", "")
     url        = article.get("url", "")
     title_orig = article.get("title", "")
     title_tr   = article.get("title_tr", "")
+    paragraphs = article.get("paragraphs", [])
 
-    for para in article.get("paragraphs", []):
-        store_translation(
-            orig_para  = para.get("original", ""),
-            tr_para    = para.get("translated", ""),
-            source     = source,
-            author     = author,
-            url        = url,
-            title_orig = title_orig,
-            title_tr   = title_tr,
-        )
-        time.sleep(0.05)  # rate limit embeddings API
+    # Filter out empty paragraphs
+    valid = [(p.get("original",""), p.get("translated","")) for p in paragraphs
+             if p.get("original","").strip() and p.get("translated","").strip()]
+    if not valid:
+        return
 
-    print(f"[STORE] Saved {len(article.get('paragraphs',[]))} paragraphs — {source}")
+    orig_texts = [o for o, _ in valid]
+    tr_texts   = [t for _, t in valid]
+
+    # Batch embed all originals in one call
+    embeddings = get_embeddings_batch(orig_texts)
+
+    try:
+        conn = get_conn()
+        cur  = conn.cursor()
+        saved = 0
+        for orig, tr, emb in zip(orig_texts, tr_texts, embeddings):
+            try:
+                if emb:
+                    cur.execute("""
+                        INSERT INTO translations
+                            (source, author, url, title_orig, title_tr, orig_para, tr_para, embedding)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (url) DO NOTHING
+                    """, (source, author, url, title_orig, title_tr, orig, tr, emb))
+                else:
+                    cur.execute("""
+                        INSERT INTO translations
+                            (source, author, url, title_orig, title_tr, orig_para, tr_para)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (url) DO NOTHING
+                    """, (source, author, url, title_orig, title_tr, orig, tr))
+                saved += 1
+            except Exception as row_err:
+                print(f"[STORE] Row error: {row_err}")
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"[STORE] Saved {saved}/{len(valid)} paragraphs — {source}")
+    except Exception as e:
+        print(f"[STORE] Connection error: {e}")
 
 
 # ── Retrieve ──────────────────────────────────────────────────────────────────
