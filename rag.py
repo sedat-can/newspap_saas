@@ -99,7 +99,7 @@ def init_db():
         );
     """)
 
-    # Auto-migrate if old 1024-dim column exists
+    # Auto-migrate vector dim if needed
     try:
         cur.execute("""
             SELECT atttypmod FROM pg_attribute
@@ -115,7 +115,6 @@ def init_db():
             print("[RAG] Migration done ✓")
     except Exception as me:
         print(f"[RAG] Migration: {me}")
-
     conn.commit()
     cur.close()
     conn.close()
@@ -124,7 +123,7 @@ def init_db():
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
-# ── Embedding — fastembed, loaded ONCE at startup ───────────────────────────
+# ── Embedding — fastembed (ONNX, no PyTorch) ────────────────────────────────
 _embed_model = None
 
 def _get_model():
@@ -140,8 +139,7 @@ def _get_model():
             print(f"[EMBED] Load error: {e}")
     return _embed_model
 
-# Pre-load at import time → gunicorn --preload shares model across workers
-# prevents worker timeout on first request
+# Load at import — gunicorn --preload shares across workers
 try:
     _get_model()
 except Exception:
@@ -162,7 +160,6 @@ def get_embedding(text: str) -> list[float] | None:
 
 
 def get_embeddings_batch(texts: list[str]) -> list:
-    """One model call for all paragraphs — much faster than one-by-one."""
     if not texts:
         return []
     try:
@@ -223,8 +220,8 @@ def store_translation(
         print(f"[STORE] Error: {e}")
 
 
-def store_article_translations(article: dict):
-    """Batch store — 1 embed call + 1 DB connection for entire article."""
+def _store_in_background(article: dict):
+    """Actual DB write — runs in background thread, never blocks HTTP response."""
     source     = article.get("source", "")
     author     = article.get("author", "")
     url        = article.get("url", "")
@@ -240,6 +237,8 @@ def store_article_translations(article: dict):
 
     orig_texts = [o for o, _ in valid]
     tr_texts   = [t for _, t in valid]
+
+    # Batch embed — slow on CPU but runs in background
     embeddings = get_embeddings_batch(orig_texts)
 
     try:
@@ -267,6 +266,16 @@ def store_article_translations(article: dict):
         print(f"[STORE] Saved {saved}/{len(valid)} paragraphs — {source}")
     except Exception as e:
         print(f"[STORE] Error: {e}")
+
+
+def store_article_translations(article: dict):
+    """
+    Fire-and-forget: returns immediately, storage happens in background.
+    This prevents HTTP timeout during embedding on slow CPU.
+    """
+    import threading
+    t = threading.Thread(target=_store_in_background, args=(article,), daemon=True)
+    t.start()
 
 
 # ── Retrieve ──────────────────────────────────────────────────────────────────
