@@ -109,22 +109,9 @@ def init_db():
 
 def get_embedding(text: str) -> list[float] | None:
     """
-    Generate a semantic embedding vector for a text using Claude's API.
-    Falls back to None if API key is not set.
+    Embedding devre disi -- full-text search kullaniliyor.
     """
-    if not ANTHROPIC_KEY:
-        return None
-    try:
-        client = Anthropic(api_key=ANTHROPIC_KEY)
-        # Voyage embeddings via Anthropic
-        response = client.embeddings.create(
-            model=EMBED_MODEL,
-            input=[text[:2000]],   # truncate to avoid token limits
-        )
-        return response.data[0].embedding
-    except Exception as e:
-        print(f"[EMBED] Error: {e}")
-        return None
+    return None
 
 
 # ── Store ─────────────────────────────────────────────────────────────────────
@@ -215,66 +202,48 @@ def retrieve_similar(
 
     Returns list of dicts: {orig_para, tr_para, source, author, similarity}
     """
-    embedding = get_embedding(text)
-    if not embedding:
+    # Anahtar kelimeleri cıkar
+    keywords = [w for w in text.split() if len(w) > 4][:8]
+    if not keywords:
         return []
+
+    query_str = " | ".join(keywords)
 
     try:
         conn = get_conn()
         cur  = conn.cursor()
 
-        # Cosine similarity search with optional source/author boost
-        # Returns top_k * 2 candidates, then we re-rank
         cur.execute("""
             SELECT
-                orig_para,
-                tr_para,
-                source,
+                paragraph   AS orig_para,
+                paragraph   AS tr_para,
+                %s          AS source,
                 author,
-                1 - (embedding <=> %s::vector) AS similarity
-            FROM translations
-            WHERE 1 - (embedding <=> %s::vector) > %s
-            ORDER BY embedding <=> %s::vector
+                ts_rank(to_tsvector('simple', paragraph),
+                        to_tsquery('simple', %s)) AS similarity
+            FROM ozgurpolitika_archive
+            WHERE to_tsvector('simple', paragraph) @@ to_tsquery('simple', %s)
+            ORDER BY similarity DESC
             LIMIT %s;
-        """, (embedding, embedding, MIN_SIMILARITY, embedding, top_k * 2))
+        """, (source or "ozgurpolitika", query_str, query_str, top_k))
 
         rows = cur.fetchall()
         cur.close()
         conn.close()
 
-        # Re-rank: boost same source/author
         results = []
         for row in rows:
-            score = row["similarity"]
-            if source and row["source"] == source:
-                score += 0.05   # small boost for same publication
-            if author and row["author"] == author:
-                score += 0.10   # bigger boost for same author
-            results.append({**dict(row), "score": score})
+            results.append({
+                "orig_para":  row["orig_para"],
+                "tr_para":    row["tr_para"],
+                "source":     row["source"],
+                "author":     row["author"],
+                "similarity": float(row["similarity"]),
+                "score":      float(row["similarity"]),
+            })
 
-        results.sort(key=lambda x: x["score"], reverse=True)
-        final = results[:top_k]
-
-        # Log retrieval metrics
-        try:
-            similarities = [r["similarity"] for r in rows]
-            avg_sim = sum(similarities) / len(similarities) if similarities else 0
-            max_sim = max(similarities) if similarities else 0
-            hit = len(final) > 0
-
-            conn2 = get_conn()
-            cur2  = conn2.cursor()
-            cur2.execute("""
-                INSERT INTO rag_metrics (source, author, results_found, avg_similarity, max_similarity, hit)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (source, author, len(final), round(avg_sim, 4), round(max_sim, 4), hit))
-            conn2.commit()
-            cur2.close()
-            conn2.close()
-        except Exception as me:
-            print(f"[METRICS] Error: {me}")
-
-        return final
+        print(f"[RAG] Full-text search: {len(results)} sonuc bulundu")
+        return results
 
     except Exception as e:
         print(f"[RETRIEVE] Error: {e}")
