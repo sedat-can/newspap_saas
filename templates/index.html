@@ -264,65 +264,31 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 /* ══════════════════════
    ANALYTICS PANEL
 ══════════════════════ */
-.analytics-view.active{display:flex}
 .anl-scroll{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px}
-.anl-header{margin-bottom:2px}
-.anl-header h2{font-size:15px;font-weight:700;color:var(--text);margin:0}
-.anl-header p{font-size:12px;color:var(--muted2);margin:3px 0 0}
-
+.anl-header h2{font-size:15px;font-weight:700;color:var(--text);margin:0 0 3px}
+.anl-header p{font-size:12px;color:var(--muted2);margin:0}
 .anl-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .anl-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-
 .anl-card{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow-sm)}
 .anl-card-label{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .anl-stat-icon{font-size:18px;margin-bottom:6px}
-.anl-stat-val{font-size:24px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.anl-stat-val{font-size:24px;font-weight:800;line-height:1}
 .anl-stat-desc{font-size:10px;color:var(--muted2);margin-top:4px}
 .anl-val-blue{color:var(--blue)}
 .anl-val-purple{color:var(--purple)}
 .anl-val-amber{color:var(--amber)}
 .anl-val-green{color:var(--green)}
-
-/* Bar chart */
 .anl-bars{display:flex;align-items:flex-end;gap:5px;height:68px}
-.anl-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
-.anl-bar{width:100%;border-radius:3px;background:var(--blue-bg);transition:height .7s cubic-bezier(.4,0,.2,1)}
-.anl-bar.peak{background:var(--blue)}
-.anl-bar-lbl{font-size:9px;color:var(--muted2);font-family:var(--mono)}
-
-/* Source bars */
-.anl-src-row{margin-bottom:9px}
-.anl-src-row:last-child{margin-bottom:0}
-.anl-src-top{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
-.anl-src-name{font-weight:500;color:var(--text)}
-.anl-src-ct{color:var(--muted);font-family:var(--mono)}
-.anl-progress{height:5px;background:var(--border);border-radius:3px;overflow:hidden}
-.anl-progress-fill{height:100%;border-radius:3px;background:var(--blue);transition:width .8s cubic-bezier(.4,0,.2,1)}
-
-/* Lang bars */
-.anl-lang-row{display:flex;align-items:center;gap:9px;margin-bottom:9px}
-.anl-lang-row:last-child{margin-bottom:0}
-.anl-lang-info{flex:1}
-.anl-lang-top{display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px}
-
-/* RAG metric row */
-.anl-rag-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+.anl-rag-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
 .anl-rag-row:last-child{border-bottom:none}
 .anl-rag-label{font-size:12px;color:var(--text2);font-weight:500}
 .anl-rag-val{font-size:13px;font-weight:700;font-family:var(--mono)}
-
-/* Recent list */
 .anl-recent-row{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)}
 .anl-recent-row:last-child{border-bottom:none}
 .anl-recent-info{flex:1;min-width:0}
 .anl-recent-title{font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .anl-recent-meta{font-size:11px;color:var(--muted);margin-top:2px}
 .anl-recent-time{font-size:10px;color:var(--muted2);white-space:nowrap;font-family:var(--mono)}
-
-/* Avg time row */
-.anl-time-row{display:flex;align-items:center;justify-content:space-between}
-.anl-time-icon{width:34px;height:34px;border-radius:8px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.anl-time-big{font-size:26px;font-weight:800;color:var(--green)}
 .tts-view.active{display:flex}
 .tts-notice{
   margin:16px 20px 0;padding:10px 14px;border-radius:var(--r-md);
@@ -787,36 +753,38 @@ input[type=range].ts::-webkit-slider-thumb{
           <div class="anl-card">
             <div class="anl-card-label" id="lblDailyChart">Günlük Çeviri (Son 14 Gün)</div>
             <div class="anl-bars" id="dailyChart">
-              <div style="color:var(--muted2);font-size:11px;align-self:center;margin:auto">Henüz veri yok</div>
+              <div style="color:var(--muted2);font-size:11px;align-self:center;margin:auto">Yükleniyor…</div>
             </div>
           </div>
           <div class="anl-card">
             <div class="anl-card-label" id="lblRagStatus">RAG Durumu</div>
-            <div id="statRag" style="font-size:13px;font-weight:600">—</div>
-            <div style="margin-top:14px">
-              <div class="anl-card-label" id="lblRagMetrics">Pipeline Metrikleri</div>
-              <div class="anl-rag-row">
-                <span class="anl-rag-label" id="lblHitRate">Hit Rate</span>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div style="width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
-                    <div id="ragHitBar" style="height:100%;width:0%;background:var(--blue);border-radius:3px;transition:width .8s"></div>
-                  </div>
-                  <span class="anl-rag-val anl-val-blue" id="ragHitRate">—</span>
+            <div id="statRag" style="font-size:13px;font-weight:600;margin-bottom:14px">—</div>
+            <div class="anl-card-label" id="lblRagMetrics">Pipeline Metrikleri</div>
+            <div class="anl-rag-row">
+              <span class="anl-rag-label" id="lblHitRate">Hit Rate</span>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="width:60px;height:4px;background:var(--border);border-radius:3px;overflow:hidden">
+                  <div id="ragHitBar" style="height:100%;width:0%;background:var(--blue);border-radius:3px;transition:width .9s"></div>
                 </div>
+                <span class="anl-rag-val anl-val-blue" id="ragHitRate">—</span>
               </div>
-              <div class="anl-rag-row">
-                <span class="anl-rag-label" id="lblAvgSim">Ort. Benzerlik</span>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div style="width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
-                    <div id="ragSimBar" style="height:100%;width:0%;background:var(--purple);border-radius:3px;transition:width .8s"></div>
-                  </div>
-                  <span class="anl-rag-val anl-val-purple" id="ragSimScore">—</span>
+            </div>
+            <div class="anl-rag-row">
+              <span class="anl-rag-label" id="lblAvgSim">Ort. Benzerlik</span>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="width:60px;height:4px;background:var(--border);border-radius:3px;overflow:hidden">
+                  <div id="ragSimBar" style="height:100%;width:0%;background:var(--purple);border-radius:3px;transition:width .9s"></div>
                 </div>
+                <span class="anl-rag-val anl-val-purple" id="ragSimScore">—</span>
               </div>
-              <div class="anl-rag-row">
-                <span class="anl-rag-label" id="lblTotalQueries">Toplam Sorgu</span>
-                <span class="anl-rag-val" id="ragTotalCalls">—</span>
-              </div>
+            </div>
+            <div class="anl-rag-row">
+              <span class="anl-rag-label" id="lblTotalQueries">Toplam Sorgu</span>
+              <span class="anl-rag-val" id="ragTotalCalls">—</span>
+            </div>
+            <div class="anl-rag-row">
+              <span class="anl-rag-label" id="lblClaudeCalls">Claude ile İyileştirilen</span>
+              <span class="anl-rag-val anl-val-green" id="ragClaudeCalls">—</span>
             </div>
           </div>
         </div>
@@ -825,14 +793,13 @@ input[type=range].ts::-webkit-slider-thumb{
         <div class="anl-grid-2">
           <div class="anl-card">
             <div class="anl-card-label" id="lblSourceBreakdown">Kaynak Dağılımı</div>
-            <div id="sourceBars"><div style="color:var(--muted2);font-size:12px">Henüz çeviri yapılmadı.</div></div>
+            <div id="sourceBars"><div style="color:var(--muted2);font-size:12px">Yükleniyor…</div></div>
           </div>
           <div class="anl-card">
             <div class="anl-card-label" id="lblRecentTranslations">Son Çeviriler</div>
-            <div id="recentList"><div style="color:var(--muted2);font-size:12px">Henüz çeviri yok.</div></div>
+            <div id="recentList"><div style="color:var(--muted2);font-size:12px">Yükleniyor…</div></div>
           </div>
         </div>
-
       </div>
     </div>
 
@@ -1034,7 +1001,7 @@ function switchTab(tab){
   document.getElementById("textView").classList.toggle("active",tab==="text");
   document.getElementById("ttsView").classList.toggle("active",tab==="tts");
   const av=document.getElementById("analyticsView");
-  if(av){av.classList.toggle("active",tab==="analytics");av.style.display=tab==="analytics"?"flex":"none";}
+  if(av){av.style.display=tab==="analytics"?"flex":"none";}
   const bp=document.getElementById("basketPanel");
   if(bp)bp.style.display=tab==="analytics"?"none":"flex";
   if(tab==="analytics")loadAnalytics();
@@ -1345,77 +1312,81 @@ function ttsVoiceChange(){TTS.voice=document.getElementById("vTtsVoice").value;i
 async function loadAnalytics(){
   try{
     const d=await(await fetch("/api/analytics")).json();
+    if(d.error){console.error("Analytics API error:",d.error);return;}
 
-    // Animate a number counting up
+    // Animated counter
     function animateNum(el,target){
-      let start=0,duration=900,step=target/(duration/16);
-      const t=setInterval(()=>{
+      if(!el)return;
+      let start=0,step=target/(900/16);
+      const timer=setInterval(()=>{
         start+=step;
-        if(start>=target){el.textContent=target.toLocaleString();clearInterval(t);}
+        if(start>=target){el.textContent=target.toLocaleString();clearInterval(timer);}
         else el.textContent=Math.floor(start).toLocaleString();
       },16);
     }
 
-    // Stat cards
-    const archEl=document.getElementById("statArchive");
-    const trnEl=document.getElementById("statTranslations");
-    const trmEl=document.getElementById("statTerms");
-    animateNum(archEl,d.archive_total||0);
-    animateNum(trnEl,d.translations_total||0);
-    animateNum(trmEl,d.terminology_count||0);
+    animateNum(document.getElementById("statArchive"),     d.archive_total||0);
+    animateNum(document.getElementById("statTranslations"),d.translations_total||0);
+    animateNum(document.getElementById("statTerms"),       d.terminology_count||0);
+
+    // RAG status — fully i18n
     document.getElementById("statRag").innerHTML=d.rag_enabled
       ? `<span style="color:var(--green);font-size:13px;font-weight:700">✅ ${t('ragActive')}</span>`
-      : `<span style="color:var(--amber);font-size:13px;font-weight:700">⏸ ${t('ragWaiting')}</span><div style="font-size:10px;color:var(--muted);margin-top:4px">ANTHROPIC_API_KEY gerekli</div>`;
+      : `<span style="color:var(--amber);font-size:13px;font-weight:700">⏸ ${t('ragWaiting')}</span><div style="font-size:10px;color:var(--muted);margin-top:4px">${t('ragKeyNeeded')}</div>`;
+
+    // RAG metrics
+    const hitRate=d.rag_hit_rate||0, simScore=d.rag_avg_similarity||0;
+    document.getElementById("ragHitRate").textContent=hitRate?hitRate.toFixed(1)+"%":"—";
+    document.getElementById("ragSimScore").textContent=simScore?simScore.toFixed(1)+"%":"—";
+    document.getElementById("ragTotalCalls").textContent=(d.rag_total_calls||0).toLocaleString();
+    document.getElementById("ragClaudeCalls").textContent=(d.rag_claude_calls||0).toLocaleString();
+    setTimeout(()=>{
+      document.getElementById("ragHitBar").style.width=hitRate+"%";
+      document.getElementById("ragSimBar").style.width=simScore+"%";
+    },120);
 
     // Source bars
     const sb=document.getElementById("sourceBars");
     if(d.sources&&d.sources.length>0){
       const max=Math.max(...d.sources.map(s=>s.count));
       sb.innerHTML=d.sources.map((s,i)=>`
-        <div class="anl-src-row">
-          <div class="anl-src-top">
-            <span class="anl-src-name">${esc(s.source||"Bilinmiyor")}</span>
-            <span class="anl-src-ct">${s.count}</span>
+        <div style="margin-bottom:9px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+            <span style="font-weight:500;color:var(--text)">${esc(s.source||t('unknown'))}</span>
+            <span style="color:var(--muted);font-family:var(--mono)">${s.count}</span>
           </div>
-          <div class="anl-progress">
-            <div class="anl-progress-fill" style="width:0%;transition-delay:${i*80}ms" data-w="${Math.round(s.count/max*100)}"></div>
+          <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:0%;background:var(--blue);border-radius:3px;transition:width .7s cubic-bezier(.4,0,.2,1) ${i*60}ms"
+                 data-w="${Math.round(s.count/max*100)}"></div>
           </div>
         </div>
       `).join("");
-      // Trigger bar animations
       requestAnimationFrame(()=>{
-        sb.querySelectorAll(".anl-progress-fill").forEach(el=>{el.style.width=el.dataset.w+"%"});
+        sb.querySelectorAll("[data-w]").forEach(el=>{el.style.width=el.dataset.w+"%"});
       });
     } else {
-      sb.innerHTML='<div style="color:var(--muted2);font-size:12px">Henüz çeviri yapılmadı.</div>';
+      sb.innerHTML=`<div style="color:var(--muted2);font-size:12px">${t('noTranslations')}</div>`;
     }
-
-    // RAG metrics
-    const hitRate=d.rag_hit_rate||0, simScore=d.rag_avg_similarity||0;
-    document.getElementById("ragHitRate").textContent=hitRate?hitRate.toFixed(1)+"%":"—";
-    document.getElementById("ragSimScore").textContent=simScore?simScore.toFixed(1)+"%":"—";
-    setTimeout(()=>{
-      document.getElementById("ragHitBar").style.width=hitRate+"%";
-      document.getElementById("ragSimBar").style.width=simScore+"%";
-    },100);
-    document.getElementById("ragTotalCalls").textContent=(d.rag_total_calls||0).toLocaleString();
 
     // Daily bar chart
     const dc=document.getElementById("dailyChart");
     if(d.daily&&d.daily.length>0){
       const maxCount=Math.max(...d.daily.map(x=>x.count));
+      dc.style.cssText="display:flex;align-items:flex-end;gap:5px;height:68px";
       dc.innerHTML=d.daily.map((x,i)=>`
-        <div class="anl-bar-col">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
           <div style="font-size:9px;color:var(--muted2);font-family:var(--mono)">${x.count>0?x.count:""}</div>
-          <div class="anl-bar ${x.count===maxCount?'peak':''}" style="height:0;transition-delay:${i*40}ms" data-h="${Math.max(4,Math.round(x.count/maxCount*52))}"></div>
-          <div class="anl-bar-lbl">${(x.day||"").slice(5)}</div>
+          <div style="width:100%;border-radius:3px;background:${x.count===maxCount?'var(--blue)':'var(--blue-bg)'};height:0;transition:height .7s cubic-bezier(.4,0,.2,1) ${i*35}ms"
+               data-h="${Math.max(3,Math.round(x.count/maxCount*52))}"></div>
+          <div style="font-size:9px;color:var(--muted2);font-family:var(--mono)">${(x.day||"").slice(5)}</div>
         </div>
       `).join("");
       requestAnimationFrame(()=>{
-        dc.querySelectorAll(".anl-bar").forEach(el=>{el.style.height=el.dataset.h+"px"});
+        dc.querySelectorAll("[data-h]").forEach(el=>{el.style.height=el.dataset.h+"px"});
       });
     } else {
-      dc.innerHTML='<div style="color:var(--muted2);font-size:11px;align-self:center;margin:auto">Henüz çeviri yapılmadı</div>';
+      dc.style.cssText="display:flex;align-items:center;justify-content:center;height:68px";
+      dc.innerHTML=`<div style="color:var(--muted2);font-size:12px">${t('noTranslations')}</div>`;
     }
 
     // Recent translations
@@ -1431,14 +1402,11 @@ async function loadAnalytics(){
         </div>
       `).join("");
     } else {
-      rl.innerHTML='<div style="color:var(--muted2);font-size:12px">Henüz çeviri yok.</div>';
+      rl.innerHTML=`<div style="color:var(--muted2);font-size:12px">${t('noTranslations')}</div>`;
     }
 
   }catch(e){
     console.error("Analytics error:",e);
-    document.getElementById("analyticsView").querySelector(".anl-scroll").insertAdjacentHTML("afterbegin",
-      `<div style="padding:10px 14px;background:var(--red-bg);border:1px solid #fecaca;border-radius:8px;color:var(--red);font-size:12px">Analytics yüklenemedi. API bağlantısını kontrol edin.</div>`
-    );
   }
 }
 
@@ -1477,11 +1445,16 @@ const LANG = {
     ragMetrics: "🤖 RAG Pipeline Metrikleri",
     hitRate: "Hit Rate",
     avgSimilarity: "Ort. Benzerlik",
-    totalQueries: "Toplam sorgu",
-    ragActive: "✅ Aktif",
-    ragWaiting: "⏸ Bekliyor",
+    totalQueries: "Toplam Sorgu",
+    claudeCalls: "Claude ile İyileştirilen",
+    ragActive: "Aktif",
+    ragWaiting: "Bekliyor",
+    ragKeyNeeded: "ANTHROPIC_API_KEY gerekli",
+    unknown: "Bilinmiyor",
     noTranslations: "Henüz çeviri yapılmadı.",
     dailyChart: "📈 Günlük Çeviri (Son 14 Gün)",
+    anlSub: "Çeviri ve okuma aktiviteniz",
+    articlesTranslated: "Çevirilen Makale",
   },
   en: {
     appTitle: "News Translator",
@@ -1515,11 +1488,16 @@ const LANG = {
     ragMetrics: "🤖 RAG Pipeline Metrics",
     hitRate: "Hit Rate",
     avgSimilarity: "Avg Similarity",
-    totalQueries: "Total queries",
-    ragActive: "✅ Active",
-    ragWaiting: "⏸ Pending",
+    totalQueries: "Total Queries",
+    claudeCalls: "Claude-Improved Paragraphs",
+    ragActive: "Active",
+    ragWaiting: "Pending",
+    ragKeyNeeded: "ANTHROPIC_API_KEY required",
+    unknown: "Unknown",
     noTranslations: "No translations yet.",
     dailyChart: "📈 Daily Translations (Last 14 Days)",
+    anlSub: "Your translation & reading activity",
+    articlesTranslated: "Articles Translated",
   }
 };
 
@@ -1578,25 +1556,27 @@ function applyLang() {
   const afUrl = document.getElementById("afUrl");
   if(afUrl) afUrl.placeholder = L.rssUrl;
 
-  // Analytics panel labels
-  const anlTitle=document.getElementById("anlTitle");
-  if(anlTitle)anlTitle.textContent=L.analyticsTitle;
-  const anlSub=document.getElementById("anlSub");
-  if(anlSub)anlSub.textContent=currentLang==="tr"?"Çeviri ve okuma aktiviteniz":"Your translation & reading activity";
-  const ids={
-    lblStatTranslations:currentLang==="tr"?"Çevirilen Makale":"Articles Translated",
-    lblStatArchive:L.archivePara,
-    lblStatTerms:L.terminology,
-    lblRagStatus:L.ragStatus,
-    lblRagMetrics:L.ragMetrics,
-    lblHitRate:L.hitRate,
-    lblAvgSim:L.avgSimilarity,
-    lblTotalQueries:L.totalQueries,
-    lblSourceBreakdown:L.sourceBreakdown,
-    lblRecentTranslations:L.recentTranslations,
-    lblDailyChart:L.dailyChart,
+  // Analytics panel — fully i18n
+  const anlIds = {
+    anlTitle:              L.analyticsTitle,
+    anlSub:                L.anlSub,
+    lblStatTranslations:   L.articlesTranslated,
+    lblStatArchive:        L.archivePara,
+    lblStatTerms:          L.terminology,
+    lblRagStatus:          L.ragStatus,
+    lblRagMetrics:         L.ragMetrics,
+    lblHitRate:            L.hitRate,
+    lblAvgSim:             L.avgSimilarity,
+    lblTotalQueries:       L.totalQueries,
+    lblClaudeCalls:        L.claudeCalls,
+    lblSourceBreakdown:    L.sourceBreakdown,
+    lblRecentTranslations: L.recentTranslations,
+    lblDailyChart:         L.dailyChart,
   };
-  Object.entries(ids).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.textContent=val;});
+  Object.entries(anlIds).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.textContent=val;});
+  // Re-render RAG status with correct language if already loaded
+  const ragEl=document.getElementById("statRag");
+  if(ragEl&&ragEl.textContent&&ragEl.textContent!=="—") loadAnalytics();
 }
 
 // Apply on load
