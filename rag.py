@@ -99,6 +99,26 @@ def init_db():
         );
     """)
 
+    # ── Auto-migration: fix vector dimension if needed ──────────────────────
+    try:
+        cur.execute("""
+            SELECT atttypmod
+            FROM pg_attribute
+            JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
+            WHERE pg_class.relname = 'translations'
+              AND pg_attribute.attname = 'embedding'
+              AND pg_attribute.attnum > 0
+        """)
+        row = cur.fetchone()
+        if row and row[0] != 384:
+            print(f"[RAG] Migrating embedding column from dim {row[0]} → 384 ...")
+            cur.execute("ALTER TABLE translations DROP COLUMN IF EXISTS embedding;")
+            cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
+            cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
+            print("[RAG] Migration done ✓")
+    except Exception as me:
+        print(f"[RAG] Migration check error: {me}")
+
     conn.commit()
     cur.close()
     conn.close()
