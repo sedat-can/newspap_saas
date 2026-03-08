@@ -205,34 +205,19 @@ def translate_paragraphs(translator, text, source="", author=""):
         return []
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     result = []
-    MAX_RAG_PARAS = 12  # Claude'a max 12 paragraf gönder, geri kalanı DeepL ile
-    for i, para in enumerate(paragraphs):
+    for para in paragraphs:
         try:
             # Step 1: DeepL base translation
             deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
-        except Exception as e:
-            print(f"[DEEPL] Error: {e}")
-            deepl_tr = para  # DeepL fail → orijinal metin
-
-        # Step 2: RAG improvement (if enabled, sadece ilk MAX_RAG_PARAS paragraf)
-        rag_tr = None
-        if RAG_ENABLED and i < MAX_RAG_PARAS:
-            try:
-                rag_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
-            except Exception as e:
-                print(f"[RAG] Paragraph error: {e}")
-                rag_tr = None  # RAG fail → None, deepl_tr kullanılacak
-
-        # RAG yoksa veya başarısız olduysa deepl_tr kullan
-        final_tr = rag_tr if rag_tr else deepl_tr
-
-        result.append({
-            "original":   para,
-            "translated": final_tr,   # UI'da gösterilen (son versiyon)
-            "deepl_tr":   deepl_tr,   # karşılaştırma için
-            "rag_tr":     rag_tr,     # None ise RAG çalışmadı
-        })
-        time.sleep(0.05)
+            # Step 2: RAG improvement (if enabled)
+            if RAG_ENABLED:
+                final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
+            else:
+                final_tr = deepl_tr
+            result.append({"original": para, "translated": final_tr})
+            time.sleep(0.05)
+        except:
+            result.append({"original": para, "translated": para})
     return result
 
 # ── DOCX builder ─────────────────────────────────────────────────────────────
@@ -529,7 +514,7 @@ def api_analytics():
 
         archive_total = 0
         try:
-            cur.execute("SELECT COUNT(*) as c FROM news_archive")
+            cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive")
             archive_total = cur.fetchone()["c"]
         except Exception: pass
 

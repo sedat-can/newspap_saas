@@ -399,6 +399,17 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 }
 .deepl-preview.open{display:block}
 .deepl-preview-label{font-size:10px;font-weight:600;color:var(--amber);margin-bottom:3px}
+#glossaryPopup{
+  position:fixed;z-index:9999;background:var(--white);border:1px solid var(--border2);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-lg);padding:14px 16px;
+  width:300px;display:none;
+}
+#glossaryPopup.show{display:block}
+#glossaryPopup h4{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)}
+#glossaryPopup input{width:100%;border:1px solid var(--border2);border-radius:var(--r);
+  padding:6px 8px;font-size:13px;margin-bottom:6px;outline:none;}
+#glossaryPopup input:focus{border-color:var(--blue)}
+#glossaryPopup .gp-btns{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
 .viewer-ov{
   position:fixed;inset:0;background:var(--bg);z-index:600;
   display:none;flex-direction:column;
@@ -1074,6 +1085,39 @@ function hl(i){
 function uhl(){document.querySelectorAll(".para").forEach(e=>e.classList.remove("hl-a","hl-b"))}
 function savePara(i,t){if(translated[viewIdx]?.paragraphs[i])translated[viewIdx].paragraphs[i].translated=t}
 function toggleDeepL(i){const el=document.getElementById('deepl-'+i);if(el)el.classList.toggle('open')}
+
+// Glossary seçim
+document.addEventListener('mouseup',function(){
+  const sel=window.getSelection();
+  if(!sel||sel.isCollapsed)return;
+  const txt=sel.toString().trim();
+  if(!txt||txt.length>60)return;
+  const popup=document.getElementById('glossaryPopup');
+  const range=sel.getRangeAt(0);
+  const rect=range.getBoundingClientRect();
+  popup.style.top=(rect.bottom+window.scrollY+8)+'px';
+  popup.style.left=Math.min(rect.left+window.scrollX, window.innerWidth-320)+'px';
+  document.getElementById('gpOrig').value=txt;
+  document.getElementById('gpTr').value='';
+  popup.classList.add('show');
+});
+document.addEventListener('mousedown',function(e){
+  if(!document.getElementById('glossaryPopup').contains(e.target))
+    closeGlossaryPopup();
+});
+function closeGlossaryPopup(){document.getElementById('glossaryPopup').classList.remove('show')}
+function saveGlossaryTerm(){
+  const orig=document.getElementById('gpOrig').value.trim();
+  const tr=document.getElementById('gpTr').value.trim();
+  if(!orig||!tr){toast('Her iki alanı doldurun','err');return;}
+  fetch('/api/rag/terminology',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({term_orig:orig,term_tr:tr})})
+  .then(r=>r.json()).then(d=>{
+    if(d.ok){toast(`"${orig}" → "${tr}" glossary'e eklendi ✓`,'ok');}
+    else toast(d.error||'Hata','err');
+    closeGlossaryPopup();
+  });
+}
 function dlCurrent(){const f=translated[viewIdx]?._docx||currentDocx;if(!f)return;const a=document.createElement("a");a.href=`/api/download/${f}`;a.download=f;a.click()}
 function words(s){return s.trim()?s.trim().split(/\s+/).filter(Boolean).length:0}
 
@@ -1378,5 +1422,17 @@ function hideOv(){document.getElementById("overlay").classList.remove("show")}
 let _tt;function toast(m,t){const e=document.getElementById("toast");e.textContent=m;e.className=`toast show ${t}`;clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove("show"),4000)}
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 </script>
+<!-- Glossary Popup -->
+<div id="glossaryPopup">
+  <h4>📖 Add to Glossary</h4>
+  <label style="font-size:11px;color:var(--muted);margin-bottom:2px;display:block">Original term</label>
+  <input id="gpOrig" placeholder="e.g. fiesta" />
+  <label style="font-size:11px;color:var(--muted);margin-bottom:2px;display:block">Turkish translation</label>
+  <input id="gpTr" placeholder="e.g. fiesta" />
+  <div class="gp-btns">
+    <button class="btn btn-secondary btn-sm" onclick="closeGlossaryPopup()">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="saveGlossaryTerm()">Save</button>
+  </div>
+</div>
 </body>
 </html>
