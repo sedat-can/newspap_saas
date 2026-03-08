@@ -386,11 +386,19 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
   padding-left:10px!important;
 }
 .diff-badge{
-  display:block;font-size:10px;font-weight:600;
+  display:inline-block;font-size:10px;font-weight:600;
   color:var(--purple);background:rgba(124,58,237,.1);
-  border-radius:4px;padding:1px 6px;margin-bottom:4px;
-  cursor:default;letter-spacing:.3px;
+  border-radius:4px;padding:2px 7px;margin-bottom:5px;
+  cursor:pointer;letter-spacing:.3px;user-select:none;
 }
+.diff-badge:hover{background:rgba(124,58,237,.2)}
+.deepl-preview{
+  display:none;background:var(--amber-bg);border:1px solid var(--amber);
+  border-radius:6px;padding:8px 10px;margin:4px 0 6px;
+  font-size:12px;color:var(--text2);line-height:1.5;
+}
+.deepl-preview.open{display:block}
+.deepl-preview-label{font-size:10px;font-weight:600;color:var(--amber);margin-bottom:3px}
 .viewer-ov{
   position:fixed;inset:0;background:var(--bg);z-index:600;
   display:none;flex-direction:column;
@@ -1046,7 +1054,7 @@ function renderViewer(){
     `<div class="vart-title">${esc(art.title_tr||art.title||"")}</div>`+
     (paras.length?paras.map((p,i)=>{
     const diff=p.rag_tr&&p.deepl_tr&&p.rag_tr.trim()!==p.deepl_tr.trim();
-    const badge=diff?`<span class="diff-badge" title="DeepL: ${esc(p.deepl_tr||'')}">✦ RAG iyileştirdi</span>`:'';
+    const badge=diff?`<span class="diff-badge" onclick="toggleDeepL(${i})">✦ RAG improved</span><div class="deepl-preview" id="deepl-${i}"><div class="deepl-preview-label">DeepL original:</div>${esc(p.deepl_tr||'')}</div>`:'';
     const cls=diff?'para para-improved':'para';
     return `<div class="${cls}" data-i="${i}" contenteditable="true" onmouseenter="hl(${i})" onmouseleave="uhl()" oninput="savePara(${i},this.innerText)">${badge}${esc(p.translated)}</div>`;
   }).join('')
@@ -1065,6 +1073,7 @@ function hl(i){
 }
 function uhl(){document.querySelectorAll(".para").forEach(e=>e.classList.remove("hl-a","hl-b"))}
 function savePara(i,t){if(translated[viewIdx]?.paragraphs[i])translated[viewIdx].paragraphs[i].translated=t}
+function toggleDeepL(i){const el=document.getElementById('deepl-'+i);if(el)el.classList.toggle('open')}
 function dlCurrent(){const f=translated[viewIdx]?._docx||currentDocx;if(!f)return;const a=document.createElement("a");a.href=`/api/download/${f}`;a.download=f;a.click()}
 function words(s){return s.trim()?s.trim().split(/\s+/).filter(Boolean).length:0}
 
