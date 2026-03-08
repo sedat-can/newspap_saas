@@ -210,15 +210,29 @@ def translate_paragraphs(translator, text, source="", author=""):
         try:
             # Step 1: DeepL base translation
             deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
-            # Step 2: RAG improvement (if enabled, only for first MAX_RAG_PARAS)
-            if RAG_ENABLED and i < MAX_RAG_PARAS:
-                final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
-            else:
-                final_tr = deepl_tr
-            result.append({"original": para, "translated": final_tr})
-            time.sleep(0.05)
-        except:
-            result.append({"original": para, "translated": para})
+        except Exception as e:
+            print(f"[DEEPL] Error: {e}")
+            deepl_tr = para  # DeepL fail → orijinal metin
+
+        # Step 2: RAG improvement (if enabled, sadece ilk MAX_RAG_PARAS paragraf)
+        rag_tr = None
+        if RAG_ENABLED and i < MAX_RAG_PARAS:
+            try:
+                rag_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
+            except Exception as e:
+                print(f"[RAG] Paragraph error: {e}")
+                rag_tr = None  # RAG fail → None, deepl_tr kullanılacak
+
+        # RAG yoksa veya başarısız olduysa deepl_tr kullan
+        final_tr = rag_tr if rag_tr else deepl_tr
+
+        result.append({
+            "original":   para,
+            "translated": final_tr,   # UI'da gösterilen (son versiyon)
+            "deepl_tr":   deepl_tr,   # karşılaştırma için
+            "rag_tr":     rag_tr,     # None ise RAG çalışmadı
+        })
+        time.sleep(0.05)
     return result
 
 # ── DOCX builder ─────────────────────────────────────────────────────────────

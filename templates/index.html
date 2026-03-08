@@ -380,7 +380,18 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 /* ══════════════════════
    TRANSLATION VIEWER
 ══════════════════════ */
-.viewer-ov{
+.para-improved{
+  border-left:3px solid var(--purple)!important;
+  background:rgba(124,58,237,.04)!important;
+  padding-left:10px!important;
+}
+.diff-badge{
+  display:inline-block;font-size:10px;font-weight:600;
+  color:var(--purple);background:rgba(124,58,237,.1);
+  border-radius:4px;padding:1px 6px;margin-bottom:4px;
+  cursor:default;letter-spacing:.3px;
+}
+
   position:fixed;inset:0;background:var(--bg);z-index:600;
   display:none;flex-direction:column;
 }
@@ -1025,6 +1036,18 @@ function renderViewer(){
   document.getElementById("vmTitle").textContent=(art.source?art.source+" — ":"")+(art.title_tr||art.title||"").substring(0,65);
   const paras=art.paragraphs||[];
   const ot=paras.map(p=>p.original).join(" "),tt=paras.map(p=>p.translated).join(" ");
+
+  function parasDiffer(p){
+    if(!p.rag_tr||!p.deepl_tr) return false;
+    return p.rag_tr.trim()!==p.deepl_tr.trim();
+  }
+
+  function renderPara(p,i){
+    const diff=parasDiffer(p);
+    const badge=diff?`<span class="diff-badge" title="DeepL: ${esc(p.deepl_tr||'')}">✦ RAG iyileştirdi</span>`:'';
+    const cls=diff?'para para-improved':'para';
+    return `<div class="${cls}" data-i="${i}" contenteditable="true" onmouseenter="hl(${i})" onmouseleave="uhl()" oninput="savePara(${i},this.innerText)">${badge}${esc(p.translated)}</div>`;
+  }
   document.getElementById("vcOrig").textContent=`${ot.length} kar · ${words(ot)} kel`;
   document.getElementById("vcTr").textContent=`${tt.length} kar · ${words(tt)} kel`;
   document.getElementById("origPane").innerHTML=
@@ -1033,7 +1056,7 @@ function renderViewer(){
     :`<p style="color:var(--muted);font-size:13px;padding:8px">Makale metni alınamadı.</p>`);
   document.getElementById("trPane").innerHTML=
     `<div class="vart-title">${esc(art.title_tr||art.title||"")}</div>`+
-    (paras.length?paras.map((p,i)=>`<div class="para" data-i="${i}" contenteditable="true" onmouseenter="hl(${i})" onmouseleave="uhl()" oninput="savePara(${i},this.innerText)">${esc(p.translated)}</div>`).join('')
+    (paras.length?paras.map((p,i)=>renderPara(p,i)).join('')
     :`<p style="color:var(--muted);font-size:13px;padding:8px">Çeviri mevcut değil.</p>`);
   const fm=m=>m?`<span class="vfoot-meta">${m}</span>`:'';
   document.getElementById("footOrig").innerHTML=[art.source&&fm(`Kaynak: <b>${esc(art.source)}</b>`),art.author&&fm(`Yazar: <b>${esc(art.author)}</b>`)].filter(Boolean).join('');
