@@ -99,36 +99,30 @@ def init_db():
         );
     """)
 
-    # Always ensure embedding column is correct 384-dim
-    # Drops old column (any dim) and recreates — safe because old embeddings
-    # from voyage/1024 model are incompatible with new 384-dim model anyway
+    # Fix embedding column dim if wrong
     try:
         cur.execute("""
-            SELECT data_type, udt_name
+            SELECT character_maximum_length
             FROM information_schema.columns
             WHERE table_name='translations' AND column_name='embedding'
         """)
         row = cur.fetchone()
-        if row is None:
-            # Column doesn't exist yet — CREATE TABLE above will handle it
-            pass
-        else:
-            # Check actual dimension via pg_attribute
-            cur.execute("""
-                SELECT atttypmod FROM pg_attribute pa
-                JOIN pg_class pc ON pc.oid = pa.attrelid
-                WHERE pc.relname='translations' AND pa.attname='embedding'
-            """)
-            dim_row = cur.fetchone()
-            current_dim = dim_row[0] if dim_row else None
-            if current_dim != 384:
-                print(f"[RAG] Fixing embedding column (dim={current_dim}) → 384 ...")
-                cur.execute("ALTER TABLE translations DROP COLUMN embedding;")
-                cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
-                cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
-                print("[RAG] Column fixed ✓")
+        # Also check via pg_attribute for vector type
+        cur.execute("""
+            SELECT atttypmod FROM pg_attribute pa
+            JOIN pg_class pc ON pc.oid = pa.attrelid
+            WHERE pc.relname='translations' AND pa.attname='embedding'
+        """)
+        dim_row = cur.fetchone()
+        needs_fix = dim_row is not None and dim_row[0] not in (384, -1, 0)
+        if needs_fix:
+            print(f"[RAG] Fixing embedding dim ({dim_row[0]}) → 384 ...")
+            cur.execute("ALTER TABLE translations DROP COLUMN IF EXISTS embedding;")
+            cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
+            cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
+            print("[RAG] Fixed ✓")
     except Exception as me:
-        print(f"[RAG] Migration error: {me}")
+        print(f"[RAG] Migration: {me}")
 
     conn.commit()
     cur.close()
@@ -138,35 +132,44 @@ def init_db():
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
-# ── Embedding — fastembed (ONNX, no PyTorch) ────────────────────────────────
-_embed_model = None
+# ── Embedding — fastembed, loaded in background thread ───────────────────────
+import threading as _threading
+_embed_model  = None
+_embed_ready  = False
+_embed_lock   = _threading.Lock()
+
+
+def _load_model_bg():
+    """Load model in background — never blocks HTTP worker startup."""
+    global _embed_model, _embed_ready
+    try:
+        from fastembed import TextEmbedding
+        m = TextEmbedding(model_name=EMBED_MODEL, cache_dir="/tmp/fe")
+        with _embed_lock:
+            _embed_model = m
+            _embed_ready = True
+        print(f"[EMBED] Ready: {EMBED_MODEL}")
+    except ImportError:
+        print("[EMBED] pip install fastembed")
+    except Exception as e:
+        print(f"[EMBED] Load error: {e}")
+
+# Fire background load immediately at import — worker starts instantly
+_threading.Thread(target=_load_model_bg, daemon=True).start()
+
 
 def _get_model():
-    global _embed_model
-    if _embed_model is None:
-        try:
-            from fastembed import TextEmbedding
-            _embed_model = TextEmbedding(model_name=EMBED_MODEL, cache_dir="/tmp/fe")
-            print(f"[EMBED] Ready: {EMBED_MODEL}")
-        except ImportError:
-            print("[EMBED] pip install fastembed")
-        except Exception as e:
-            print(f"[EMBED] Load error: {e}")
-    return _embed_model
-
-try:
-    _get_model()
-except Exception:
-    pass
+    with _embed_lock:
+        return _embed_model if _embed_ready else None
 
 
 def get_embedding(text: str) -> list[float] | None:
     if not text or not text.strip():
         return None
+    m = _get_model()
+    if m is None:
+        return None   # model still loading — skip embedding
     try:
-        m = _get_model()
-        if m is None:
-            return None
         return list(m.embed([text[:1000]]))[0].tolist()
     except Exception as e:
         print(f"[EMBED] Error: {e}")
@@ -176,10 +179,10 @@ def get_embedding(text: str) -> list[float] | None:
 def get_embeddings_batch(texts: list[str]) -> list:
     if not texts:
         return []
+    m = _get_model()
+    if m is None:
+        return [None] * len(texts)
     try:
-        m = _get_model()
-        if m is None:
-            return [None] * len(texts)
         return [v.tolist() for v in m.embed([t[:1000] if t else " " for t in texts])]
     except Exception as e:
         print(f"[EMBED] Batch error: {e}")
@@ -235,7 +238,7 @@ def store_translation(
 
 
 def _store_in_background(article: dict):
-    """Runs in background thread — embedding + DB write, never blocks HTTP."""
+    """Background thread: embed + DB write. Never touches HTTP worker."""
     source     = article.get("source", "")
     author     = article.get("author", "")
     url        = article.get("url", "")
@@ -282,7 +285,7 @@ def _store_in_background(article: dict):
 
 
 def store_article_translations(article: dict):
-    """Fire-and-forget — returns immediately, storage in background thread."""
+    """Fire-and-forget — returns immediately."""
     import threading
     threading.Thread(target=_store_in_background, args=(article,), daemon=True).start()
 
