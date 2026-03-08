@@ -205,12 +205,13 @@ def translate_paragraphs(translator, text, source="", author=""):
         return []
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     result = []
-    for para in paragraphs:
+    MAX_RAG_PARAS = 12  # Claude'a max 12 paragraf gönder, geri kalanı DeepL ile
+    for i, para in enumerate(paragraphs):
         try:
             # Step 1: DeepL base translation
             deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
-            # Step 2: RAG improvement (if enabled)
-            if RAG_ENABLED:
+            # Step 2: RAG improvement (if enabled, only for first MAX_RAG_PARAS)
+            if RAG_ENABLED and i < MAX_RAG_PARAS:
                 final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
             else:
                 final_tr = deepl_tr

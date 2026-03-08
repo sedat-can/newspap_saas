@@ -109,9 +109,22 @@ def init_db():
 
 def get_embedding(text: str) -> list[float] | None:
     """
-    Embedding devre dışı — full-text search kullanılıyor.
+    Generate a semantic embedding vector for a text using Claude's API.
+    Falls back to None if API key is not set.
     """
-    return None
+    if not ANTHROPIC_KEY:
+        return None
+    try:
+        client = Anthropic(api_key=ANTHROPIC_KEY)
+        # Voyage embeddings via Anthropic
+        response = client.embeddings.create(
+            model=EMBED_MODEL,
+            input=[text[:2000]],   # truncate to avoid token limits
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"[EMBED] Error: {e}")
+        return None
 
 
 # ── Store ─────────────────────────────────────────────────────────────────────
@@ -197,55 +210,71 @@ def retrieve_similar(
     top_k:  int = TOP_K,
 ) -> list[dict]:
     """
-    PostgreSQL full-text search üzerinden benzer paragrafları bulur.
-    ozgurpolitika_archive tablosunu kullanır (scraper ile dolu).
-    Voyage/embedding gerekmez.
+    Find the most semantically similar past translations.
+    Boosts results from same source/author.
+
+    Returns list of dicts: {orig_para, tr_para, source, author, similarity}
     """
-    if not text.strip():
+    embedding = get_embedding(text)
+    if not embedding:
         return []
-
-    # Anahtar kelimeleri çıkar (kısa kelimeleri atla)
-    keywords = [w for w in text.split() if len(w) > 4][:8]
-    if not keywords:
-        return []
-
-    query_str = " | ".join(keywords)  # OR araması
 
     try:
         conn = get_conn()
         cur  = conn.cursor()
 
+        # Cosine similarity search with optional source/author boost
+        # Returns top_k * 2 candidates, then we re-rank
         cur.execute("""
             SELECT
-                paragraph   AS orig_para,
-                paragraph   AS tr_para,
-                %s          AS source,
+                orig_para,
+                tr_para,
+                source,
                 author,
-                ts_rank(to_tsvector('simple', paragraph),
-                        to_tsquery('simple', %s)) AS similarity
-            FROM ozgurpolitika_archive
-            WHERE to_tsvector('simple', paragraph) @@ to_tsquery('simple', %s)
-            ORDER BY similarity DESC
+                1 - (embedding <=> %s::vector) AS similarity
+            FROM translations
+            WHERE 1 - (embedding <=> %s::vector) > %s
+            ORDER BY embedding <=> %s::vector
             LIMIT %s;
-        """, (source or "ozgurpolitika", query_str, query_str, top_k))
+        """, (embedding, embedding, MIN_SIMILARITY, embedding, top_k * 2))
 
         rows = cur.fetchall()
         cur.close()
         conn.close()
 
+        # Re-rank: boost same source/author
         results = []
         for row in rows:
-            results.append({
-                "orig_para":  row["orig_para"],
-                "tr_para":    row["tr_para"],
-                "source":     row["source"],
-                "author":     row["author"],
-                "similarity": float(row["similarity"]),
-                "score":      float(row["similarity"]),
-            })
+            score = row["similarity"]
+            if source and row["source"] == source:
+                score += 0.05   # small boost for same publication
+            if author and row["author"] == author:
+                score += 0.10   # bigger boost for same author
+            results.append({**dict(row), "score": score})
 
-        print(f"[RAG] Full-text search: {len(results)} sonuç bulundu")
-        return results
+        results.sort(key=lambda x: x["score"], reverse=True)
+        final = results[:top_k]
+
+        # Log retrieval metrics
+        try:
+            similarities = [r["similarity"] for r in rows]
+            avg_sim = sum(similarities) / len(similarities) if similarities else 0
+            max_sim = max(similarities) if similarities else 0
+            hit = len(final) > 0
+
+            conn2 = get_conn()
+            cur2  = conn2.cursor()
+            cur2.execute("""
+                INSERT INTO rag_metrics (source, author, results_found, avg_similarity, max_similarity, hit)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (source, author, len(final), round(avg_sim, 4), round(max_sim, 4), hit))
+            conn2.commit()
+            cur2.close()
+            conn2.close()
+        except Exception as me:
+            print(f"[METRICS] Error: {me}")
+
+        return final
 
     except Exception as e:
         print(f"[RETRIEVE] Error: {e}")
@@ -381,10 +410,11 @@ Improve the translation using the examples and glossary above. Return ONLY the T
         client   = Anthropic(api_key=ANTHROPIC_KEY)
         response = client.messages.create(
             model      = CLAUDE_MODEL,
-            max_tokens = 1000,
+            max_tokens = 600,
             temperature = 0,
             system     = system_prompt,
             messages   = [{"role": "user", "content": user_prompt}],
+            timeout    = 15,
         )
         improved = response.content[0].text.strip()
         return improved if improved else deepl_tr
