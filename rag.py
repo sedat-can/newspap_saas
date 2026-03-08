@@ -124,52 +124,52 @@ def init_db():
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
-# ── Embedding — fastembed (ONNX, no PyTorch, ~50MB) ─────────────────────────
+# ── Embedding — fastembed, loaded ONCE at startup ───────────────────────────
 _embed_model = None
 
 def _get_model():
-    """Lazy-load. Model downloads once on first use, not at build time."""
     global _embed_model
     if _embed_model is None:
         try:
             from fastembed import TextEmbedding
-            # cache_dir keeps model between restarts
-            _embed_model = TextEmbedding(
-                model_name=EMBED_MODEL,
-                cache_dir="/tmp/fastembed_cache"
-            )
+            _embed_model = TextEmbedding(model_name=EMBED_MODEL, cache_dir="/tmp/fe")
             print(f"[EMBED] Ready: {EMBED_MODEL}")
         except ImportError:
-            print("[EMBED] Missing: pip install fastembed")
+            print("[EMBED] pip install fastembed")
         except Exception as e:
             print(f"[EMBED] Load error: {e}")
     return _embed_model
 
+# Pre-load at import time → gunicorn --preload shares model across workers
+# prevents worker timeout on first request
+try:
+    _get_model()
+except Exception:
+    pass
+
 
 def get_embedding(text: str) -> list[float] | None:
-    """Single embed — returns 384-dim vector."""
     if not text or not text.strip():
         return None
     try:
-        model = _get_model()
-        if model is None:
+        m = _get_model()
+        if m is None:
             return None
-        return list(model.embed([text[:1000]]))[0].tolist()
+        return list(m.embed([text[:1000]]))[0].tolist()
     except Exception as e:
         print(f"[EMBED] Error: {e}")
         return None
 
 
 def get_embeddings_batch(texts: list[str]) -> list:
-    """Batch embed — single model call for all paragraphs."""
+    """One model call for all paragraphs — much faster than one-by-one."""
     if not texts:
         return []
     try:
-        model = _get_model()
-        if model is None:
+        m = _get_model()
+        if m is None:
             return [None] * len(texts)
-        clean = [t[:1000] if t else " " for t in texts]
-        return [v.tolist() for v in model.embed(clean)]
+        return [v.tolist() for v in m.embed([t[:1000] if t else " " for t in texts])]
     except Exception as e:
         print(f"[EMBED] Batch error: {e}")
         return [None] * len(texts)
@@ -224,7 +224,7 @@ def store_translation(
 
 
 def store_article_translations(article: dict):
-    """Batch store — 1 embed call + 1 DB connection for whole article."""
+    """Batch store — 1 embed call + 1 DB connection for entire article."""
     source     = article.get("source", "")
     author     = article.get("author", "")
     url        = article.get("url", "")
@@ -243,9 +243,7 @@ def store_article_translations(article: dict):
     embeddings = get_embeddings_batch(orig_texts)
 
     try:
-        conn = get_conn()
-        cur  = conn.cursor()
-        saved = 0
+        conn = get_conn(); cur = conn.cursor(); saved = 0
         for orig, tr, emb in zip(orig_texts, tr_texts, embeddings):
             try:
                 if emb:
