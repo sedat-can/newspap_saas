@@ -25,7 +25,7 @@ from anthropic import Anthropic
 DATABASE_URL   = os.environ.get("DATABASE_URL", "")
 ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 EMBED_MODEL    = "voyage-multilingual-2"   # Claude's multilingual embedding model
-CLAUDE_MODEL   = "claude-sonnet-4-20250514"
+CLAUDE_MODEL   = "claude-haiku-4-5-20251001"  # 10x cheaper than Sonnet
 TOP_K          = 5                          # How many similar examples to retrieve
 MIN_SIMILARITY = 0.72                       # Cosine similarity threshold (0-1)
 
@@ -109,22 +109,9 @@ def init_db():
 
 def get_embedding(text: str) -> list[float] | None:
     """
-    Generate a semantic embedding vector for a text using Claude's API.
-    Falls back to None if API key is not set.
+    Embedding devre dışı — full-text search kullanılıyor.
     """
-    if not ANTHROPIC_KEY:
-        return None
-    try:
-        client = Anthropic(api_key=ANTHROPIC_KEY)
-        # Voyage embeddings via Anthropic
-        response = client.embeddings.create(
-            model=EMBED_MODEL,
-            input=[text[:2000]],   # truncate to avoid token limits
-        )
-        return response.data[0].embedding
-    except Exception as e:
-        print(f"[EMBED] Error: {e}")
-        return None
+    return None
 
 
 # ── Store ─────────────────────────────────────────────────────────────────────
@@ -210,71 +197,55 @@ def retrieve_similar(
     top_k:  int = TOP_K,
 ) -> list[dict]:
     """
-    Find the most semantically similar past translations.
-    Boosts results from same source/author.
-
-    Returns list of dicts: {orig_para, tr_para, source, author, similarity}
+    PostgreSQL full-text search üzerinden benzer paragrafları bulur.
+    ozgurpolitika_archive tablosunu kullanır (scraper ile dolu).
+    Voyage/embedding gerekmez.
     """
-    embedding = get_embedding(text)
-    if not embedding:
+    if not text.strip():
         return []
+
+    # Anahtar kelimeleri çıkar (kısa kelimeleri atla)
+    keywords = [w for w in text.split() if len(w) > 4][:8]
+    if not keywords:
+        return []
+
+    query_str = " | ".join(keywords)  # OR araması
 
     try:
         conn = get_conn()
         cur  = conn.cursor()
 
-        # Cosine similarity search with optional source/author boost
-        # Returns top_k * 2 candidates, then we re-rank
         cur.execute("""
             SELECT
-                orig_para,
-                tr_para,
-                source,
+                paragraph   AS orig_para,
+                paragraph   AS tr_para,
+                %s          AS source,
                 author,
-                1 - (embedding <=> %s::vector) AS similarity
-            FROM translations
-            WHERE 1 - (embedding <=> %s::vector) > %s
-            ORDER BY embedding <=> %s::vector
+                ts_rank(to_tsvector('simple', paragraph),
+                        to_tsquery('simple', %s)) AS similarity
+            FROM ozgurpolitika_archive
+            WHERE to_tsvector('simple', paragraph) @@ to_tsquery('simple', %s)
+            ORDER BY similarity DESC
             LIMIT %s;
-        """, (embedding, embedding, MIN_SIMILARITY, embedding, top_k * 2))
+        """, (source or "ozgurpolitika", query_str, query_str, top_k))
 
         rows = cur.fetchall()
         cur.close()
         conn.close()
 
-        # Re-rank: boost same source/author
         results = []
         for row in rows:
-            score = row["similarity"]
-            if source and row["source"] == source:
-                score += 0.05   # small boost for same publication
-            if author and row["author"] == author:
-                score += 0.10   # bigger boost for same author
-            results.append({**dict(row), "score": score})
+            results.append({
+                "orig_para":  row["orig_para"],
+                "tr_para":    row["tr_para"],
+                "source":     row["source"],
+                "author":     row["author"],
+                "similarity": float(row["similarity"]),
+                "score":      float(row["similarity"]),
+            })
 
-        results.sort(key=lambda x: x["score"], reverse=True)
-        final = results[:top_k]
-
-        # Log retrieval metrics
-        try:
-            similarities = [r["similarity"] for r in rows]
-            avg_sim = sum(similarities) / len(similarities) if similarities else 0
-            max_sim = max(similarities) if similarities else 0
-            hit = len(final) > 0
-
-            conn2 = get_conn()
-            cur2  = conn2.cursor()
-            cur2.execute("""
-                INSERT INTO rag_metrics (source, author, results_found, avg_similarity, max_similarity, hit)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (source, author, len(final), round(avg_sim, 4), round(max_sim, 4), hit))
-            conn2.commit()
-            cur2.close()
-            conn2.close()
-        except Exception as me:
-            print(f"[METRICS] Error: {me}")
-
-        return final
+        print(f"[RAG] Full-text search: {len(results)} sonuç bulundu")
+        return results
 
     except Exception as e:
         print(f"[RETRIEVE] Error: {e}")
@@ -316,19 +287,43 @@ def add_term(term_orig: str, term_tr: str, source: str = ""):
 
 # ── Generate (RAG-enhanced translation) ──────────────────────────────────────
 
+MIN_WORDS_FOR_CLAUDE = 15  # Skip Claude for very short paragraphs
+
+def should_use_claude(text: str, examples: list, terms: dict) -> tuple[bool, str]:
+    """
+    Smart decision: should we call Claude or just return DeepL?
+    Returns (use_claude, reason)
+    """
+    word_count = len(text.split())
+
+    # Too short — Claude adds no value
+    if word_count < MIN_WORDS_FOR_CLAUDE:
+        return False, f"too_short ({word_count} words)"
+
+    # Has similar examples — Claude can match style
+    if examples:
+        return True, f"rag_hit (similarity={examples[0]['similarity']:.2f})"
+
+    # Has terminology matches — Claude must apply glossary
+    if terms:
+        term_matches = [t for t in terms if t.lower() in text.lower()]
+        if term_matches:
+            return True, f"term_match ({', '.join(term_matches[:2])})"
+
+    # No RAG examples, no term matches — DeepL is sufficient
+    return False, "no_context"
+
+
 def rag_translate_paragraph(
     text:       str,
     source:     str = "",
     author:     str = "",
-    deepl_tr:   str = "",   # DeepL translation as base
+    deepl_tr:   str = "",
 ) -> str:
     """
-    Improve a DeepL translation using RAG context.
-
-    Flow:
-      1. Retrieve similar past translations
-      2. Load terminology overrides
-      3. Ask Claude to refine DeepL output using examples
+    Smart RAG translation:
+    - Only calls Claude when RAG has examples OR terminology matches
+    - Falls back to DeepL otherwise (saves ~60-70% API cost)
     """
     if not ANTHROPIC_KEY or not text.strip():
         return deepl_tr or text
@@ -339,11 +334,14 @@ def rag_translate_paragraph(
     # Step 2: Get terminology
     terms = get_terminology()
 
-    # If no examples and no terms, just return DeepL
-    if not examples and not terms:
+    # Step 3: Smart decision — call Claude?
+    use_claude, reason = should_use_claude(text, examples, terms)
+    print(f"[RAG] Claude={'YES' if use_claude else 'NO'} reason={reason}")
+
+    if not use_claude:
         return deepl_tr or text
 
-    # Step 3: Build prompt
+    # Step 4: Build prompt
     system_prompt = """You are an expert Turkish translator specializing in left-wing political journalism.
 Your job is to improve a machine translation using provided reference examples.
 
@@ -362,29 +360,29 @@ Rules:
 
     terms_text = ""
     if terms:
-        terms_text = "\n\n## Terminology Glossary (use these exact translations):\n"
-        for orig, tr in list(terms.items())[:20]:
-            terms_text += f"- {orig} → {tr}\n"
+        term_matches = {k: v for k, v in terms.items() if k.lower() in text.lower()}
+        if term_matches:
+            terms_text = "\n\n## Terminology Glossary (use these exact translations):\n"
+            for orig, tr in term_matches.items():
+                terms_text += f"- {orig} → {tr}\n"
 
-    user_prompt = f"""## Source Publication: {source or 'Unknown'}
-## Author: {author or 'Unknown'}
+    user_prompt = f"""## Source: {source or 'Unknown'} | Author: {author or 'Unknown'}
 {examples_text}{terms_text}
 
-## Original English text:
+## Original:
 {text}
 
-## Machine translation (DeepL):
+## DeepL translation:
 {deepl_tr}
 
-## Task:
-Improve the machine translation using the reference examples and terminology glossary above.
-Return ONLY the improved Turkish translation."""
+Improve the translation using the examples and glossary above. Return ONLY the Turkish translation."""
 
     try:
         client   = Anthropic(api_key=ANTHROPIC_KEY)
         response = client.messages.create(
             model      = CLAUDE_MODEL,
             max_tokens = 1000,
+            temperature = 0,
             system     = system_prompt,
             messages   = [{"role": "user", "content": user_prompt}],
         )
