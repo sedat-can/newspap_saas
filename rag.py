@@ -99,14 +99,31 @@ def init_db():
         );
     """)
 
-    # Always reset embedding column to vector(384)
+    # One-time migration: only drop column if it's wrong dimension (1024 → 384)
+    # Do NOT drop if already 384 — that would delete all stored embeddings!
     try:
-        cur.execute("ALTER TABLE translations DROP COLUMN IF EXISTS embedding;")
-        cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
-        cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
-        print("[RAG] Embedding column reset to vector(384) ✓")
+        cur.execute("""
+            SELECT atttypmod FROM pg_attribute pa
+            JOIN pg_class pc ON pc.oid = pa.attrelid
+            WHERE pc.relname = 'translations' AND pa.attname = 'embedding'
+        """)
+        row = cur.fetchone()
+        if row is None:
+            # Column doesn't exist at all — add it fresh
+            cur.execute("ALTER TABLE translations ADD COLUMN IF NOT EXISTS embedding vector(384);")
+            print("[RAG] Embedding column created (384) ✓")
+        elif row[0] != 384:
+            # Wrong dimension (e.g. 1024 from old voyage model) — safe to reset
+            print(f"[RAG] Wrong dim ({row[0]}), resetting to 384 ...")
+            cur.execute("ALTER TABLE translations DROP COLUMN embedding;")
+            cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
+            cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
+            print("[RAG] Embedding column fixed ✓")
+        else:
+            print("[RAG] Embedding column OK (384) ✓")
     except Exception as me:
-        print(f"[RAG] Reset error: {me}")
+        print(f"[RAG] Migration error: {me}")
+
     conn.commit()
     cur.close()
     conn.close()
@@ -212,7 +229,6 @@ def store_translation(
 
 
 def _store_in_background(article: dict):
-    global _db_has_rows
     source     = article.get("source", "")
     author     = article.get("author", "")
     url        = article.get("url", "")
@@ -238,7 +254,6 @@ def _store_in_background(article: dict):
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                         ON CONFLICT (url) DO NOTHING
                     """, (source,author,url,title_orig,title_tr,orig,tr,emb))
-                    _db_has_rows = True   # signal retrieve_similar to start working
                 else:
                     cur.execute("""
                         INSERT INTO translations
@@ -263,27 +278,6 @@ def store_article_translations(article: dict):
 
 # ── Retrieve ──────────────────────────────────────────────────────────────────
 
-# Cache row count — skip embedding entirely when DB is empty
-_db_has_rows: bool | None = None
-
-def _check_db_has_rows() -> bool:
-    global _db_has_rows
-    if _db_has_rows:          # once True, stays True
-        return True
-    if _db_has_rows is False: # checked recently, was empty — recheck every 10th call
-        import random
-        if random.random() > 0.1:
-            return False
-    try:
-        conn = get_conn(); cur = conn.cursor()
-        cur.execute("SELECT EXISTS(SELECT 1 FROM translations WHERE embedding IS NOT NULL LIMIT 1)")
-        _db_has_rows = cur.fetchone()[0]
-        cur.close(); conn.close()
-    except Exception:
-        _db_has_rows = False
-    return _db_has_rows
-
-
 def retrieve_similar(
     text:   str,
     source: str = "",
@@ -296,10 +290,6 @@ def retrieve_similar(
 
     Returns list of dicts: {orig_para, tr_para, source, author, similarity}
     """
-    # Fast exit — skip embedding if DB has no vectors yet
-    if not _check_db_has_rows():
-        return []
-
     embedding = get_embedding(text)
     if not embedding:
         return []
