@@ -55,12 +55,13 @@ def init_db():
             id          SERIAL PRIMARY KEY,
             source      TEXT,
             author      TEXT,
-            url         TEXT UNIQUE,
+            url         TEXT,
             title_orig  TEXT,
             title_tr    TEXT,
             orig_para   TEXT NOT NULL,
             tr_para     TEXT NOT NULL,
-            created_at  TIMESTAMPTZ DEFAULT NOW()
+            created_at  TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (url, orig_para)
         );
     """)
 
@@ -101,13 +102,13 @@ def init_db():
     cur.close()
     conn.close()
 
-    # Fix embedding column in a SEPARATE connection (avoids aborted transaction issue)
+    # Fix schema in a SEPARATE connection (avoids aborted transaction issue)
     try:
         mconn = get_conn()
         mconn.autocommit = True
         mcur = mconn.cursor()
 
-        # Check current state
+        # 1. Fix embedding column dimension
         mcur.execute("""
             SELECT pa.atttypmod
             FROM pg_attribute pa
@@ -117,13 +118,10 @@ def init_db():
               AND NOT pa.attisdropped
         """)
         row = mcur.fetchone()
-
         if row is None:
-            # Column missing — add it
             mcur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
             print("[RAG] Embedding column added (384) ✓")
         elif row[0] != 384:
-            # Wrong dimension (old 1024) — drop and recreate
             print(f"[RAG] Wrong dim {row[0]}, fixing → 384 ...")
             mcur.execute("ALTER TABLE translations DROP COLUMN embedding;")
             mcur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
@@ -131,6 +129,27 @@ def init_db():
             print("[RAG] Embedding column fixed ✓")
         else:
             print("[RAG] Embedding column OK (384) ✓")
+
+        # 2. Fix unique constraint: drop url-only, add (url, orig_para)
+        mcur.execute("""
+            SELECT constraint_name FROM information_schema.table_constraints
+            WHERE table_name='translations' AND constraint_type='UNIQUE'
+        """)
+        constraints = [r[0] for r in mcur.fetchall()]
+        for c in constraints:
+            if 'url' in c.lower() and 'orig' not in c.lower():
+                mcur.execute(f"ALTER TABLE translations DROP CONSTRAINT IF EXISTS {c};")
+                print(f"[RAG] Dropped old constraint: {c}")
+        # Add composite unique if not exists
+        mcur.execute("""
+            SELECT 1 FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu USING (constraint_name)
+            WHERE tc.table_name='translations' AND tc.constraint_type='UNIQUE'
+              AND ccu.column_name='orig_para'
+        """)
+        if not mcur.fetchone():
+            mcur.execute("ALTER TABLE translations ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);")
+            print("[RAG] Added UNIQUE(url, orig_para) ✓")
 
         mcur.close()
         mconn.close()
@@ -262,14 +281,14 @@ def _store_in_background(article: dict):
                         INSERT INTO translations
                             (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT (url) DO NOTHING
+                        ON CONFLICT (url, orig_para) DO NOTHING
                     """, (source,author,url,title_orig,title_tr,orig,tr,emb))
                 else:
                     cur.execute("""
                         INSERT INTO translations
                             (source,author,url,title_orig,title_tr,orig_para,tr_para)
                         VALUES (%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT (url) DO NOTHING
+                        ON CONFLICT (url, orig_para) DO NOTHING
                     """, (source,author,url,title_orig,title_tr,orig,tr))
                 saved += 1
             except Exception as row_e:
@@ -299,6 +318,8 @@ def retrieve_similar(
 
     Returns list of dicts: {orig_para, tr_para, source, author, similarity}
     """
+    if not _embed_ready:
+        return []   # model still loading — skip to avoid blocking HTTP worker
     embedding = get_embedding(text)
     if not embedding:
         return []

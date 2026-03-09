@@ -567,18 +567,12 @@ def db_status():
         conn = psycopg2.connect(os.environ.get("DATABASE_URL",""), cursor_factory=psycopg2.extras.RealDictCursor)
         cur = conn.cursor()
         out = {}
-
-        # 1. translations genel
         cur.execute("SELECT COUNT(*) as c FROM translations")
         out["total_paragraphs"] = cur.fetchone()["c"]
-
         cur.execute("SELECT COUNT(*) as c FROM translations WHERE embedding IS NOT NULL")
         out["with_embeddings"] = cur.fetchone()["c"]
-
         cur.execute("SELECT COUNT(DISTINCT url) as c FROM translations")
         out["unique_urls"] = cur.fetchone()["c"]
-
-        # 2. Unique constraint durumu
         cur.execute("""
             SELECT tc.constraint_name, string_agg(ccu.column_name, ', ' ORDER BY ccu.column_name) as cols
             FROM information_schema.table_constraints tc
@@ -587,49 +581,68 @@ def db_status():
             GROUP BY tc.constraint_name
         """)
         out["unique_constraints"] = [dict(r) for r in cur.fetchall()]
-
-        # 3. Kaç URL'de kaç paragraf var (ilk 10)
-        cur.execute("""
-            SELECT url, COUNT(*) as para_count
-            FROM translations
-            GROUP BY url
-            ORDER BY para_count DESC
-            LIMIT 10
-        """)
-        out["paragraphs_per_url"] = [dict(r) for r in cur.fetchall()]
-
-        # 4. Kaynak bazında
-        cur.execute("""
-            SELECT source, COUNT(*) as c, COUNT(DISTINCT url) as urls
-            FROM translations
-            GROUP BY source ORDER BY c DESC
-        """)
+        cur.execute("SELECT source, COUNT(*) as c, COUNT(DISTINCT url) as urls FROM translations GROUP BY source ORDER BY c DESC")
         out["by_source"] = [dict(r) for r in cur.fetchall()]
-
-        # 5. ozgurpolitika_archive durumu
-        cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive")
-        out["archive_total"] = cur.fetchone()["c"]
-
-        cur.execute("SELECT COUNT(DISTINCT url) as c FROM ozgurpolitika_archive")
-        out["archive_unique_urls"] = cur.fetchone()["c"]
-
-        cur.execute("""
-            SELECT COUNT(*) as c FROM ozgurpolitika_archive a
-            WHERE NOT EXISTS (
-                SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph
-            )
-        """)
+        cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive a WHERE NOT EXISTS (SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph)")
         out["archive_not_yet_migrated"] = cur.fetchone()["c"]
-
         cur.close(); conn.close()
-        return app.response_class(
-            response=json.dumps(out, ensure_ascii=False, indent=2, default=str),
-            mimetype="application/json"
-        )
+        return app.response_class(response=json.dumps(out, ensure_ascii=False, indent=2, default=str), mimetype="application/json")
     except Exception as e:
-        import traceback
-        return app.response_class(
-            response=json.dumps({"error": str(e), "trace": traceback.format_exc()}, indent=2),
-            mimetype="application/json"
-        ), 500
+        return {"error": str(e)}, 500
+
+
+@app.route("/api/migrate-archive")
+def migrate_archive():
+    import threading, hashlib
+    def _run():
+        import time
+        try:
+            from rag import get_conn, get_embeddings_batch, _embed_ready
+            for _ in range(60):
+                if _embed_ready: break
+                time.sleep(2)
+            conn = get_conn(); cur = conn.cursor()
+            # Get paragraphs not yet in translations
+            cur.execute("""
+                SELECT a.url, a.title, a.author, a.paragraph
+                FROM ozgurpolitika_archive a
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph
+                )
+                ORDER BY a.id
+            """)
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            total = len(rows)
+            print(f"[MIGRATE] {total} paragraphs to process ...")
+            if total == 0:
+                print("[MIGRATE] Nothing to do ✓")
+                return
+            BATCH = 10; inserted = 0
+            for i in range(0, total, BATCH):
+                batch = rows[i:i+BATCH]
+                vecs = get_embeddings_batch([r["paragraph"] for r in batch])
+                conn2 = get_conn(); cur2 = conn2.cursor()
+                for row, vec in zip(batch, vecs):
+                    try:
+                        para_url = row["url"] + "#" + hashlib.md5(row["paragraph"][:80].encode()).hexdigest()[:8]
+                        cur2.execute("""
+                            INSERT INTO translations (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT (url, orig_para) DO NOTHING
+                        """, ("Özgür Politika", row["author"] or "", para_url,
+                              row["title"] or "", row["title"] or "",
+                              row["paragraph"], row["paragraph"], vec))
+                        inserted += 1
+                    except Exception as re:
+                        conn2.rollback()
+                        print(f"[MIGRATE] Row error: {re}")
+                conn2.commit(); cur2.close(); conn2.close()
+                print(f"[MIGRATE] {min(i+BATCH,total)}/{total} ...")
+                time.sleep(0.5)
+            print(f"[MIGRATE] Done — {inserted}/{total} ✓")
+        except Exception as e:
+            print(f"[MIGRATE] Error: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started — check Railway logs"}
 
