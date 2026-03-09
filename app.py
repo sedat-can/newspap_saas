@@ -560,52 +560,88 @@ if __name__ == "__main__":
     app.run(debug=True, port=5000)
 
 
-@app.route("/api/db-tables")
-def db_tables():
-    import os, json, psycopg2, psycopg2.extras
-    try:
-        conn = psycopg2.connect(os.environ.get("DATABASE_URL",""), cursor_factory=psycopg2.extras.RealDictCursor)
-        cur = conn.cursor()
+@app.route("/api/migrate-archive")
+def migrate_archive():
+    """
+    One-time: copy ozgurpolitika_archive → translations with embeddings.
+    Runs in background, check Railway logs for progress.
+    """
+    import threading, json
 
-        # All tables
-        cur.execute("""
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema = 'public' ORDER BY table_name
-        """)
-        tables = [r["table_name"] for r in cur.fetchall()]
+    def _run():
+        try:
+            from rag import get_conn, get_embeddings_batch
+            conn = get_conn()
+            cur  = conn.cursor()
 
-        result = {"tables": {}}
-        for t in tables:
-            try:
-                # Row count
-                cur.execute(f"SELECT COUNT(*) as c FROM {t}")
-                count = cur.fetchone()["c"]
+            # Fetch all archive paragraphs not yet in translations
+            cur.execute("""
+                SELECT a.url, a.title, a.author, a.paragraph, a.para_index
+                FROM ozgurpolitika_archive a
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM translations t
+                    WHERE t.url = a.url AND t.orig_para = a.paragraph
+                )
+                ORDER BY a.id
+            """)
+            rows = cur.fetchall()
+            total = len(rows)
+            print(f"[MIGRATE] {total} paragraphs to process ...")
 
-                # Column names
-                cur.execute(f"""
-                    SELECT column_name, data_type FROM information_schema.columns
-                    WHERE table_name = %s ORDER BY ordinal_position
-                """, (t,))
-                cols = [f"{r['column_name']} ({r['data_type']})" for r in cur.fetchall()]
+            BATCH = 50
+            inserted = 0
+            for i in range(0, total, BATCH):
+                batch = rows[i:i+BATCH]
+                texts = [r["paragraph"] for r in batch]
+                vecs  = get_embeddings_batch(texts)
 
-                # Sample row
-                cur.execute(f"SELECT * FROM {t} LIMIT 1")
-                sample = cur.fetchone()
+                for row, vec in zip(batch, vecs):
+                    try:
+                        if vec:
+                            cur.execute("""
+                                INSERT INTO translations
+                                    (source, author, url, title_orig, title_tr, orig_para, tr_para, embedding)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (url) DO NOTHING
+                            """, (
+                                "Özgür Politika",
+                                row["author"] or "",
+                                row["url"],
+                                row["title"] or "",
+                                row["title"] or "",
+                                row["paragraph"],   # Türkçe paragraf — hem orig hem tr
+                                row["paragraph"],
+                                vec
+                            ))
+                        else:
+                            cur.execute("""
+                                INSERT INTO translations
+                                    (source, author, url, title_orig, title_tr, orig_para, tr_para)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (url) DO NOTHING
+                            """, (
+                                "Özgür Politika",
+                                row["author"] or "",
+                                row["url"],
+                                row["title"] or "",
+                                row["title"] or "",
+                                row["paragraph"],
+                                row["paragraph"],
+                            ))
+                        inserted += 1
+                    except Exception as re:
+                        conn.rollback()
+                        print(f"[MIGRATE] Row error: {re}")
 
-                result["tables"][t] = {
-                    "row_count": count,
-                    "columns": cols,
-                    "sample": dict(sample) if sample else None
-                }
-            except Exception as te:
-                result["tables"][t] = {"error": str(te)}
-                conn.rollback()
+                conn.commit()
+                print(f"[MIGRATE] {min(i+BATCH, total)}/{total} done ...")
 
-        cur.close(); conn.close()
-        return app.response_class(
-            response=json.dumps(result, ensure_ascii=False, indent=2, default=str),
-            mimetype="application/json"
-        )
-    except Exception as e:
-        return {"error": str(e)}, 500
+            cur.close(); conn.close()
+            print(f"[MIGRATE] Complete — {inserted}/{total} paragraphs ✓")
+
+        except Exception as e:
+            print(f"[MIGRATE] Error: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "message": "Check Railway logs — takes ~2-3 minutes"}
 
