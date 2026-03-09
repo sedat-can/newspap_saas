@@ -676,3 +676,41 @@ def migrate_archive():
         response=json.dumps({"status": "started"}, ensure_ascii=False),
         mimetype="application/json"
     )
+
+
+@app.route("/api/fix-constraint")
+def fix_constraint():
+    import os, json, psycopg2
+    try:
+        conn = psycopg2.connect(os.environ.get("DATABASE_URL",""))
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        # Drop old url-only unique constraint
+        cur.execute("""
+            SELECT constraint_name FROM information_schema.table_constraints
+            WHERE table_name='translations' AND constraint_type='UNIQUE'
+        """)
+        constraints = [r[0] for r in cur.fetchall()]
+        dropped = []
+        for c in constraints:
+            cur.execute(f"ALTER TABLE translations DROP CONSTRAINT IF EXISTS {c};")
+            dropped.append(c)
+
+        # Add correct composite unique
+        cur.execute("""
+            ALTER TABLE translations
+            ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);
+        """)
+
+        cur.close(); conn.close()
+        return app.response_class(
+            response=json.dumps({"dropped": dropped, "added": "UNIQUE(url, orig_para)", "status": "ok"}, indent=2),
+            mimetype="application/json"
+        )
+    except Exception as e:
+        return app.response_class(
+            response=json.dumps({"error": str(e)}, indent=2),
+            mimetype="application/json"
+        ), 500
+
