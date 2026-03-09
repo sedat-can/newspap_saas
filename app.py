@@ -210,20 +210,23 @@ def translate_paragraphs(translator, text, source="", author=""):
     if not text or not text.strip():
         return []
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    result = []
+    deepl_results = []
     for para in paragraphs:
         try:
-            # Step 1: DeepL base translation
-            deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
-            # Step 2: RAG improvement (if enabled)
-            if RAG_ENABLED:
-                final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
-            else:
-                final_tr = deepl_tr
-            result.append({"original": para, "translated": final_tr})
-            time.sleep(0.05)
+            tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
         except:
-            result.append({"original": para, "translated": para})
+            tr = para
+        deepl_results.append(tr)
+    result = []
+    for para, deepl_tr in zip(paragraphs, deepl_results):
+        try:
+            if RAG_ENABLED:
+                final_tr, rag_improved = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
+            else:
+                final_tr, rag_improved = deepl_tr, False
+            result.append({"original": para, "translated": final_tr, "deepl_tr": deepl_tr, "rag_improved": rag_improved})
+        except:
+            result.append({"original": para, "translated": deepl_tr, "deepl_tr": deepl_tr, "rag_improved": False})
     return result
 
 # ── DOCX builder ─────────────────────────────────────────────────────────────
@@ -262,7 +265,8 @@ def build_docx(articles_data):
 
         # Body
         for chunk in art.get("paragraphs", []):
-            bp = doc.add_paragraph(chunk.get("translated",""))
+            tr_val = chunk.get("translated","")
+        bp = doc.add_paragraph(tr_val if isinstance(tr_val, str) else (tr_val[0] if tr_val else ""))
             for r in bp.runs: r.font.size = Pt(11)
 
         # Source URL
@@ -530,7 +534,6 @@ def api_analytics():
             translations_total = cur.fetchone()["c"]
             cur.execute("SELECT source, COUNT(*) as count FROM translations GROUP BY source ORDER BY count DESC LIMIT 10")
             sources = [dict(r) for r in cur.fetchall()]
-            # Recent: distinct articles (not Özgür Politika archive)
             cur.execute("""
                 SELECT DISTINCT ON (url) source, author, title_orig, title_tr, url, created_at
                 FROM translations
@@ -550,7 +553,6 @@ def api_analytics():
             terminology_count = cur.fetchone()["c"]
         except Exception: pass
 
-        # RAG metrics
         rag_hit_rate, rag_avg_similarity, rag_total, rag_hits = 0, 0, 0, 0
         try:
             cur.execute("SELECT COUNT(*) as c FROM rag_metrics")
@@ -603,64 +605,11 @@ def db_status():
         out["total_paragraphs"] = cur.fetchone()["c"]
         cur.execute("SELECT COUNT(*) as c FROM translations WHERE embedding IS NOT NULL")
         out["with_embeddings"] = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(DISTINCT url) as c FROM translations")
-        out["unique_urls"] = cur.fetchone()["c"]
-        cur.execute("""
-            SELECT tc.constraint_name, string_agg(ccu.column_name, ', ' ORDER BY ccu.column_name) as cols
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.constraint_column_usage ccu USING (constraint_name, table_name)
-            WHERE tc.table_name = 'translations' AND tc.constraint_type = 'UNIQUE'
-            GROUP BY tc.constraint_name
-        """)
-        out["unique_constraints"] = [dict(r) for r in cur.fetchall()]
-        cur.execute("SELECT source, COUNT(*) as c, COUNT(DISTINCT url) as urls FROM translations GROUP BY source ORDER BY c DESC")
+        cur.execute("SELECT source, COUNT(*) as c FROM translations GROUP BY source ORDER BY c DESC")
         out["by_source"] = [dict(r) for r in cur.fetchall()]
-        cur.execute("""
-            SELECT COUNT(*) as c FROM ozgurpolitika_archive a
-            WHERE NOT EXISTS (SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph)
-        """)
+        cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive a WHERE NOT EXISTS (SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph)")
         out["archive_not_yet_migrated"] = cur.fetchone()["c"]
         cur.close(); conn.close()
-        return app.response_class(
-            response=json.dumps(out, ensure_ascii=False, indent=2, default=str),
-            mimetype="application/json"
-        )
+        return app.response_class(response=json.dumps(out, ensure_ascii=False, indent=2, default=str), mimetype="application/json")
     except Exception as e:
-        return app.response_class(
-            response=json.dumps({"error": str(e)}, indent=2),
-            mimetype="application/json"
-        ), 500
-
-
-@app.route("/api/fix-constraint")
-def fix_constraint():
-    import os, psycopg2
-    try:
-        conn = psycopg2.connect(os.environ.get("DATABASE_URL",""))
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT constraint_name FROM information_schema.table_constraints
-            WHERE table_name='translations' AND constraint_type='UNIQUE'
-        """)
-        dropped = []
-        for row in cur.fetchall():
-            c = row[0]
-            if 'url_para' not in c:
-                cur.execute(f"ALTER TABLE translations DROP CONSTRAINT IF EXISTS {c};")
-                dropped.append(c)
-        try:
-            cur.execute("ALTER TABLE translations ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);")
-        except Exception:
-            pass
-        cur.close(); conn.close()
-        return app.response_class(
-            response=json.dumps({"dropped": dropped, "status": "ok"}, indent=2),
-            mimetype="application/json"
-        )
-    except Exception as e:
-        return app.response_class(
-            response=json.dumps({"error": str(e)}, indent=2),
-            mimetype="application/json"
-        ), 500
-
+        return app.response_class(response=json.dumps({"error": str(e)}, indent=2), mimetype="application/json"), 500
