@@ -559,48 +559,53 @@ def api_download(filename):
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
 
-@app.route("/api/db-check")
-def db_check():
+
+@app.route("/api/db-tables")
+def db_tables():
     import os, json, psycopg2, psycopg2.extras
-    results = {"steps": []}
     try:
-        db_url = os.environ.get("DATABASE_URL", "")
-        results["db_url_set"] = bool(db_url)
-        results["db_url_prefix"] = db_url[:20] if db_url else "MISSING"
-
-        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
-        results["steps"].append("connected")
-
+        conn = psycopg2.connect(os.environ.get("DATABASE_URL",""), cursor_factory=psycopg2.extras.RealDictCursor)
         cur = conn.cursor()
 
-        cur.execute("SELECT COUNT(*) as c FROM translations")
-        results["total_paragraphs"] = cur.fetchone()["c"]
-        results["steps"].append("counted translations")
-
-        cur.execute("SELECT COUNT(*) as c FROM translations WHERE embedding IS NOT NULL")
-        results["with_embeddings"] = cur.fetchone()["c"]
-
+        # All tables
         cur.execute("""
-            SELECT pa.atttypmod as dim FROM pg_attribute pa
-            JOIN pg_class pc ON pc.oid = pa.attrelid
-            WHERE pc.relname='translations' AND pa.attname='embedding' AND NOT pa.attisdropped
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' ORDER BY table_name
         """)
-        row = cur.fetchone()
-        results["embedding_dim"] = row["dim"] if row else "column missing"
+        tables = [r["table_name"] for r in cur.fetchall()]
 
-        cur.execute("SELECT source, COUNT(*) as c FROM translations GROUP BY source ORDER BY c DESC LIMIT 10")
-        results["sources"] = [dict(r) for r in cur.fetchall()]
+        result = {"tables": {}}
+        for t in tables:
+            try:
+                # Row count
+                cur.execute(f"SELECT COUNT(*) as c FROM {t}")
+                count = cur.fetchone()["c"]
+
+                # Column names
+                cur.execute(f"""
+                    SELECT column_name, data_type FROM information_schema.columns
+                    WHERE table_name = %s ORDER BY ordinal_position
+                """, (t,))
+                cols = [f"{r['column_name']} ({r['data_type']})" for r in cur.fetchall()]
+
+                # Sample row
+                cur.execute(f"SELECT * FROM {t} LIMIT 1")
+                sample = cur.fetchone()
+
+                result["tables"][t] = {
+                    "row_count": count,
+                    "columns": cols,
+                    "sample": dict(sample) if sample else None
+                }
+            except Exception as te:
+                result["tables"][t] = {"error": str(te)}
+                conn.rollback()
 
         cur.close(); conn.close()
-        results["steps"].append("done")
         return app.response_class(
-            response=json.dumps(results, ensure_ascii=False, indent=2),
+            response=json.dumps(result, ensure_ascii=False, indent=2, default=str),
             mimetype="application/json"
         )
     except Exception as e:
-        results["error"] = str(e)
-        results["error_type"] = type(e).__name__
-        return app.response_class(
-            response=json.dumps(results, ensure_ascii=False, indent=2),
-            mimetype="application/json"
-        ), 500
+        return {"error": str(e)}, 500
+
