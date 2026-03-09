@@ -267,9 +267,14 @@ def _store_in_background(article: dict):
     title_orig = article.get("title", "")
     title_tr   = article.get("title_tr", "")
     paragraphs = article.get("paragraphs", [])
-    valid = [(p.get("original",""), p.get("translated",""))
-             for p in paragraphs
-             if p.get("original","").strip() and p.get("translated","").strip()]
+    valid = []
+    for p in paragraphs:
+        orig = p.get("original","")
+        tr_raw = p.get("translated","")
+        # translated may be a tuple (text, rag_improved) — extract string
+        tr = tr_raw[0] if isinstance(tr_raw, tuple) else tr_raw
+        if orig.strip() and tr.strip():
+            valid.append((orig, tr))
     if not valid:
         return
     orig_texts = [o for o, _ in valid]
