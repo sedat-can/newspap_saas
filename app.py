@@ -24,6 +24,12 @@ else:
 app = Flask(__name__)
 OUTPUT_DIR  = os.path.join(os.path.dirname(__file__), "output")
 
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
 # ── Basic Auth ────────────────────────────────────────────────────────────────
 APP_USERNAME = os.environ.get("APP_USERNAME", "admin")
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
@@ -204,20 +210,25 @@ def translate_paragraphs(translator, text, source="", author=""):
     if not text or not text.strip():
         return []
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    result = []
+    # Step 1: DeepL all at once
+    deepl_results = []
     for para in paragraphs:
         try:
-            # Step 1: DeepL base translation
-            deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
-            # Step 2: RAG improvement (if enabled)
-            if RAG_ENABLED:
-                final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
-            else:
-                final_tr = deepl_tr
-            result.append({"original": para, "translated": final_tr})
-            time.sleep(0.05)
+            tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
         except:
-            result.append({"original": para, "translated": para})
+            tr = para
+        deepl_results.append(tr)
+    # Step 2: RAG per paragraph
+    result = []
+    for para, deepl_tr in zip(paragraphs, deepl_results):
+        try:
+            if RAG_ENABLED:
+                final_tr, rag_improved = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
+            else:
+                final_tr, rag_improved = deepl_tr, False
+            result.append({"original": para, "translated": final_tr, "deepl_tr": deepl_tr, "rag_improved": rag_improved})
+        except:
+            result.append({"original": para, "translated": deepl_tr, "deepl_tr": deepl_tr, "rag_improved": False})
     return result
 
 # ── DOCX builder ─────────────────────────────────────────────────────────────
@@ -574,21 +585,33 @@ def db_status():
         cur.execute("SELECT COUNT(DISTINCT url) as c FROM translations")
         out["unique_urls"] = cur.fetchone()["c"]
         cur.execute("""
-            SELECT tc.constraint_name, string_agg(ccu.column_name, ', ' ORDER BY ccu.column_name) as cols
+            SELECT tc.constraint_name,
+                   string_agg(ccu.column_name, ', ' ORDER BY ccu.column_name) as cols
             FROM information_schema.table_constraints tc
-            JOIN information_schema.constraint_column_usage ccu USING (constraint_name, table_name)
+            JOIN information_schema.constraint_column_usage ccu
+              USING (constraint_name, table_name)
             WHERE tc.table_name = 'translations' AND tc.constraint_type = 'UNIQUE'
             GROUP BY tc.constraint_name
         """)
         out["unique_constraints"] = [dict(r) for r in cur.fetchall()]
         cur.execute("SELECT source, COUNT(*) as c, COUNT(DISTINCT url) as urls FROM translations GROUP BY source ORDER BY c DESC")
         out["by_source"] = [dict(r) for r in cur.fetchall()]
-        cur.execute("SELECT COUNT(*) as c FROM ozgurpolitika_archive a WHERE NOT EXISTS (SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph)")
+        cur.execute("""
+            SELECT COUNT(*) as c FROM ozgurpolitika_archive a
+            WHERE NOT EXISTS (SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph)
+        """)
         out["archive_not_yet_migrated"] = cur.fetchone()["c"]
         cur.close(); conn.close()
-        return app.response_class(response=json.dumps(out, ensure_ascii=False, indent=2, default=str), mimetype="application/json")
+        return app.response_class(
+            response=json.dumps(out, ensure_ascii=False, indent=2, default=str),
+            mimetype="application/json"
+        )
     except Exception as e:
-        return {"error": str(e)}, 500
+        import traceback
+        return app.response_class(
+            response=json.dumps({"error": str(e), "trace": traceback.format_exc()}, indent=2),
+            mimetype="application/json"
+        ), 500
 
 
 @app.route("/api/migrate-archive")
@@ -602,7 +625,6 @@ def migrate_archive():
                 if _embed_ready: break
                 time.sleep(2)
             conn = get_conn(); cur = conn.cursor()
-            # Get paragraphs not yet in translations
             cur.execute("""
                 SELECT a.url, a.title, a.author, a.paragraph
                 FROM ozgurpolitika_archive a
@@ -625,18 +647,24 @@ def migrate_archive():
                 conn2 = get_conn(); cur2 = conn2.cursor()
                 for row, vec in zip(batch, vecs):
                     try:
-                        para_url = row["url"] + "#" + hashlib.md5(row["paragraph"][:80].encode()).hexdigest()[:8]
+                        import hashlib as _hl
+                        para_url = row["url"] + "#" + _hl.md5(row["paragraph"][:80].encode()).hexdigest()[:8]
+                        # WHERE NOT EXISTS — no CONFLICT constraint needed
                         cur2.execute("""
-                            INSERT INTO translations (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                            ON CONFLICT (url, orig_para) DO NOTHING
+                            INSERT INTO translations
+                                (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
+                            SELECT %s,%s,%s,%s,%s,%s,%s,%s
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM translations WHERE orig_para = %s
+                            )
                         """, ("Özgür Politika", row["author"] or "", para_url,
                               row["title"] or "", row["title"] or "",
-                              row["paragraph"], row["paragraph"], vec))
+                              row["paragraph"], row["paragraph"], vec,
+                              row["paragraph"]))
                         inserted += 1
-                    except Exception as re:
+                    except Exception as row_err:
                         conn2.rollback()
-                        print(f"[MIGRATE] Row error: {re}")
+                        print(f"[MIGRATE] Row error: {row_err}")
                 conn2.commit(); cur2.close(); conn2.close()
                 print(f"[MIGRATE] {min(i+BATCH,total)}/{total} ...")
                 time.sleep(0.5)
@@ -644,5 +672,7 @@ def migrate_archive():
         except Exception as e:
             print(f"[MIGRATE] Error: {e}")
     threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started — check Railway logs"}
-
+    return app.response_class(
+        response=json.dumps({"status": "started"}, ensure_ascii=False),
+        mimetype="application/json"
+    )
