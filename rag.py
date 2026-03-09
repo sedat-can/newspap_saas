@@ -49,19 +49,17 @@ def init_db():
     # Enable pgvector
     cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
-    # Main translations table
-    # embedding is 1024-dim (Voyage multilingual model)
+    # Main translations table — create without embedding column first
     cur.execute("""
         CREATE TABLE IF NOT EXISTS translations (
             id          SERIAL PRIMARY KEY,
-            source      TEXT,                        -- e.g. "Jacobin"
-            author      TEXT,                        -- e.g. "Naomi Klein"
+            source      TEXT,
+            author      TEXT,
             url         TEXT UNIQUE,
             title_orig  TEXT,
             title_tr    TEXT,
-            orig_para   TEXT NOT NULL,               -- original paragraph
-            tr_para     TEXT NOT NULL,               -- Turkish translation
-            embedding   vector(384),                -- semantic vector
+            orig_para   TEXT NOT NULL,
+            tr_para     TEXT NOT NULL,
             created_at  TIMESTAMPTZ DEFAULT NOW()
         );
     """)
@@ -99,34 +97,46 @@ def init_db():
         );
     """)
 
-    # One-time migration: only drop column if it's wrong dimension (1024 → 384)
-    # Do NOT drop if already 384 — that would delete all stored embeddings!
-    try:
-        cur.execute("""
-            SELECT atttypmod FROM pg_attribute pa
-            JOIN pg_class pc ON pc.oid = pa.attrelid
-            WHERE pc.relname = 'translations' AND pa.attname = 'embedding'
-        """)
-        row = cur.fetchone()
-        if row is None:
-            # Column doesn't exist at all — add it fresh
-            cur.execute("ALTER TABLE translations ADD COLUMN IF NOT EXISTS embedding vector(384);")
-            print("[RAG] Embedding column created (384) ✓")
-        elif row[0] != 384:
-            # Wrong dimension (e.g. 1024 from old voyage model) — safe to reset
-            print(f"[RAG] Wrong dim ({row[0]}), resetting to 384 ...")
-            cur.execute("ALTER TABLE translations DROP COLUMN embedding;")
-            cur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
-            cur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
-            print("[RAG] Embedding column fixed ✓")
-        else:
-            print("[RAG] Embedding column OK (384) ✓")
-    except Exception as me:
-        print(f"[RAG] Migration error: {me}")
-
     conn.commit()
     cur.close()
     conn.close()
+
+    # Fix embedding column in a SEPARATE connection (avoids aborted transaction issue)
+    try:
+        mconn = get_conn()
+        mconn.autocommit = True
+        mcur = mconn.cursor()
+
+        # Check current state
+        mcur.execute("""
+            SELECT pa.atttypmod
+            FROM pg_attribute pa
+            JOIN pg_class pc ON pc.oid = pa.attrelid
+            WHERE pc.relname = 'translations'
+              AND pa.attname = 'embedding'
+              AND NOT pa.attisdropped
+        """)
+        row = mcur.fetchone()
+
+        if row is None:
+            # Column missing — add it
+            mcur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
+            print("[RAG] Embedding column added (384) ✓")
+        elif row[0] != 384:
+            # Wrong dimension (old 1024) — drop and recreate
+            print(f"[RAG] Wrong dim {row[0]}, fixing → 384 ...")
+            mcur.execute("ALTER TABLE translations DROP COLUMN embedding;")
+            mcur.execute("ALTER TABLE translations ADD COLUMN embedding vector(384);")
+            mcur.execute("DROP INDEX IF EXISTS translations_embedding_idx;")
+            print("[RAG] Embedding column fixed ✓")
+        else:
+            print("[RAG] Embedding column OK (384) ✓")
+
+        mcur.close()
+        mconn.close()
+    except Exception as me:
+        print(f"[RAG] Migration error: {me}")
+
     print("[RAG] Database initialized ✓")
 
 
@@ -271,7 +281,6 @@ def _store_in_background(article: dict):
         print(f"[STORE] Error: {e}")
 
 def store_article_translations(article: dict):
-    """Fire-and-forget — returns immediately."""
     import threading
     threading.Thread(target=_store_in_background, args=(article,), daemon=True).start()
 
