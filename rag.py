@@ -280,16 +280,20 @@ def _store_in_background(article: dict):
                     cur.execute("""
                         INSERT INTO translations
                             (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT (url, orig_para) DO NOTHING
-                    """, (source,author,url,title_orig,title_tr,orig,tr,emb))
+                        SELECT %s,%s,%s,%s,%s,%s,%s,%s
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM translations WHERE url=%s AND orig_para=%s
+                        )
+                    """, (source,author,url,title_orig,title_tr,orig,tr,emb,url,orig))
                 else:
                     cur.execute("""
                         INSERT INTO translations
                             (source,author,url,title_orig,title_tr,orig_para,tr_para)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT (url, orig_para) DO NOTHING
-                    """, (source,author,url,title_orig,title_tr,orig,tr))
+                        SELECT %s,%s,%s,%s,%s,%s,%s
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM translations WHERE url=%s AND orig_para=%s
+                        )
+                    """, (source,author,url,title_orig,title_tr,orig,tr,url,orig))
                 saved += 1
             except Exception as row_e:
                 conn.rollback()
