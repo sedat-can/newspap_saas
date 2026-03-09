@@ -148,8 +148,11 @@ def init_db():
               AND ccu.column_name='orig_para'
         """)
         if not mcur.fetchone():
-            mcur.execute("ALTER TABLE translations ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);")
-            print("[RAG] Added UNIQUE(url, orig_para) ✓")
+            try:
+                mcur.execute("ALTER TABLE translations ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);")
+                print("[RAG] Added UNIQUE(url, orig_para) ✓")
+            except Exception:
+                pass  # already exists
 
         mcur.close()
         mconn.close()
