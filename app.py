@@ -556,56 +556,51 @@ def api_download(filename):
         return jsonify({"error": "Dosya bulunamadı"}), 404
     return send_file(filepath, as_attachment=True, download_name=filename)
 
-
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
 
 @app.route("/api/db-check")
 def db_check():
-    """Temporary debug endpoint — remove after checking."""
+    import os, json, psycopg2, psycopg2.extras
+    results = {"steps": []}
     try:
-        from rag import get_conn
-        conn = get_conn()
+        db_url = os.environ.get("DATABASE_URL", "")
+        results["db_url_set"] = bool(db_url)
+        results["db_url_prefix"] = db_url[:20] if db_url else "MISSING"
+
+        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        results["steps"].append("connected")
+
         cur = conn.cursor()
 
-        # Article count in translations
-        cur.execute("SELECT COUNT(*) FROM translations")
-        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as c FROM translations")
+        results["total_paragraphs"] = cur.fetchone()["c"]
+        results["steps"].append("counted translations")
 
-        # With embeddings
-        cur.execute("SELECT COUNT(*) FROM translations WHERE embedding IS NOT NULL")
-        with_emb = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as c FROM translations WHERE embedding IS NOT NULL")
+        results["with_embeddings"] = cur.fetchone()["c"]
 
-        # Embedding column dim
         cur.execute("""
-            SELECT pa.atttypmod FROM pg_attribute pa
+            SELECT pa.atttypmod as dim FROM pg_attribute pa
             JOIN pg_class pc ON pc.oid = pa.attrelid
-            WHERE pc.relname='translations' AND pa.attname='embedding'
+            WHERE pc.relname='translations' AND pa.attname='embedding' AND NOT pa.attisdropped
         """)
         row = cur.fetchone()
-        dim = row[0] if row else None
+        results["embedding_dim"] = row["dim"] if row else "column missing"
 
-        # Sample sources
         cur.execute("SELECT source, COUNT(*) as c FROM translations GROUP BY source ORDER BY c DESC LIMIT 10")
-        sources = [{"source": r[0], "count": r[1]} for r in cur.fetchall()]
-
-        # Recent rows
-        cur.execute("SELECT id, source, LEFT(orig_para,60), embedding IS NOT NULL FROM translations ORDER BY id DESC LIMIT 5")
-        recent = [{"id": r[0], "source": r[1], "para": r[2], "has_embedding": r[3]} for r in cur.fetchall()]
+        results["sources"] = [dict(r) for r in cur.fetchall()]
 
         cur.close(); conn.close()
-        import json
+        results["steps"].append("done")
         return app.response_class(
-            response=json.dumps({
-                "total_paragraphs": total,
-                "with_embeddings": with_emb,
-                "without_embeddings": total - with_emb,
-                "embedding_dim": dim,
-                "sources": sources,
-                "recent_5": recent,
-            }, ensure_ascii=False, indent=2),
+            response=json.dumps(results, ensure_ascii=False, indent=2),
             mimetype="application/json"
         )
     except Exception as e:
-        return {"error": str(e)}, 500
-
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+        results["error"] = str(e)
+        results["error_type"] = type(e).__name__
+        return app.response_class(
+            response=json.dumps(results, ensure_ascii=False, indent=2),
+            mimetype="application/json"
+        ), 500
