@@ -562,21 +562,23 @@ if __name__ == "__main__":
 
 @app.route("/api/migrate-archive")
 def migrate_archive():
-    """
-    One-time: copy ozgurpolitika_archive → translations with embeddings.
-    Runs in background, check Railway logs for progress.
-    """
-    import threading, json
+    """One-time: copy ozgurpolitika_archive → translations with embeddings."""
+    import threading
 
     def _run():
+        import time
         try:
-            from rag import get_conn, get_embeddings_batch
+            from rag import get_conn, get_embeddings_batch, _embed_ready
+            # Wait for model to be ready
+            for _ in range(60):
+                if _embed_ready:
+                    break
+                time.sleep(2)
+
             conn = get_conn()
             cur  = conn.cursor()
-
-            # Fetch all archive paragraphs not yet in translations
             cur.execute("""
-                SELECT a.url, a.title, a.author, a.paragraph, a.para_index
+                SELECT a.url, a.title, a.author, a.paragraph
                 FROM ozgurpolitika_archive a
                 WHERE NOT EXISTS (
                     SELECT 1 FROM translations t
@@ -585,63 +587,49 @@ def migrate_archive():
                 ORDER BY a.id
             """)
             rows = cur.fetchall()
+            cur.close(); conn.close()
+
             total = len(rows)
             print(f"[MIGRATE] {total} paragraphs to process ...")
 
-            BATCH = 50
+            BATCH = 10   # small batch to avoid OOM
             inserted = 0
+
             for i in range(0, total, BATCH):
                 batch = rows[i:i+BATCH]
                 texts = [r["paragraph"] for r in batch]
                 vecs  = get_embeddings_batch(texts)
 
+                conn2 = get_conn(); cur2 = conn2.cursor()
                 for row, vec in zip(batch, vecs):
                     try:
-                        if vec:
-                            cur.execute("""
-                                INSERT INTO translations
-                                    (source, author, url, title_orig, title_tr, orig_para, tr_para, embedding)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (url) DO NOTHING
-                            """, (
-                                "Özgür Politika",
-                                row["author"] or "",
-                                row["url"],
-                                row["title"] or "",
-                                row["title"] or "",
-                                row["paragraph"],   # Türkçe paragraf — hem orig hem tr
-                                row["paragraph"],
-                                vec
-                            ))
-                        else:
-                            cur.execute("""
-                                INSERT INTO translations
-                                    (source, author, url, title_orig, title_tr, orig_para, tr_para)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (url) DO NOTHING
-                            """, (
-                                "Özgür Politika",
-                                row["author"] or "",
-                                row["url"],
-                                row["title"] or "",
-                                row["title"] or "",
-                                row["paragraph"],
-                                row["paragraph"],
-                            ))
+                        cur2.execute("""
+                            INSERT INTO translations
+                                (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT (url) DO NOTHING
+                        """, (
+                            "Özgür Politika",
+                            row["author"] or "",
+                            row["url"],
+                            row["title"] or "",
+                            row["title"] or "",
+                            row["paragraph"],
+                            row["paragraph"],
+                            vec
+                        ))
                         inserted += 1
                     except Exception as re:
-                        conn.rollback()
-                        print(f"[MIGRATE] Row error: {re}")
+                        conn2.rollback()
+                conn2.commit(); cur2.close(); conn2.close()
 
-                conn.commit()
-                print(f"[MIGRATE] {min(i+BATCH, total)}/{total} done ...")
+                print(f"[MIGRATE] {min(i+BATCH, total)}/{total} ...")
+                time.sleep(1)   # breathe between batches
 
-            cur.close(); conn.close()
-            print(f"[MIGRATE] Complete — {inserted}/{total} paragraphs ✓")
-
+            print(f"[MIGRATE] Done — {inserted}/{total} ✓")
         except Exception as e:
             print(f"[MIGRATE] Error: {e}")
 
     threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started", "message": "Check Railway logs — takes ~2-3 minutes"}
+    return {"status": "started"}
 
