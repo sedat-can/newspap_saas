@@ -210,25 +210,20 @@ def translate_paragraphs(translator, text, source="", author=""):
     if not text or not text.strip():
         return []
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    # Step 1: DeepL all at once
-    deepl_results = []
+    result = []
     for para in paragraphs:
         try:
-            tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
-        except:
-            tr = para
-        deepl_results.append(tr)
-    # Step 2: RAG per paragraph
-    result = []
-    for para, deepl_tr in zip(paragraphs, deepl_results):
-        try:
+            # Step 1: DeepL base translation
+            deepl_tr = translator.translate_text(para, target_lang=TARGET_LANGUAGE).text
+            # Step 2: RAG improvement (if enabled)
             if RAG_ENABLED:
-                final_tr, rag_improved = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
+                final_tr = rag_translate_paragraph(para, source=source, author=author, deepl_tr=deepl_tr)
             else:
-                final_tr, rag_improved = deepl_tr, False
-            result.append({"original": para, "translated": final_tr, "deepl_tr": deepl_tr, "rag_improved": rag_improved})
+                final_tr = deepl_tr
+            result.append({"original": para, "translated": final_tr})
+            time.sleep(0.05)
         except:
-            result.append({"original": para, "translated": deepl_tr, "deepl_tr": deepl_tr, "rag_improved": False})
+            result.append({"original": para, "translated": para})
     return result
 
 # ── DOCX builder ─────────────────────────────────────────────────────────────
@@ -535,8 +530,16 @@ def api_analytics():
             translations_total = cur.fetchone()["c"]
             cur.execute("SELECT source, COUNT(*) as count FROM translations GROUP BY source ORDER BY count DESC LIMIT 10")
             sources = [dict(r) for r in cur.fetchall()]
-            cur.execute("SELECT source, author, title_orig, title_tr, created_at FROM translations ORDER BY created_at DESC LIMIT 10")
+            # Recent: distinct articles (not Özgür Politika archive)
+            cur.execute("""
+                SELECT DISTINCT ON (url) source, author, title_orig, title_tr, url, created_at
+                FROM translations
+                WHERE source != 'Özgür Politika'
+                ORDER BY url, created_at DESC
+                LIMIT 10
+            """)
             recent = [dict(r) for r in cur.fetchall()]
+            recent.sort(key=lambda x: x.get("created_at") or "", reverse=True)
             for r in recent:
                 if r.get("created_at"):
                     r["created_at"] = r["created_at"].strftime("%d.%m.%Y %H:%M")
@@ -547,6 +550,20 @@ def api_analytics():
             terminology_count = cur.fetchone()["c"]
         except Exception: pass
 
+        # RAG metrics
+        rag_hit_rate, rag_avg_similarity, rag_total, rag_hits = 0, 0, 0, 0
+        try:
+            cur.execute("SELECT COUNT(*) as c FROM rag_metrics")
+            rag_total = cur.fetchone()["c"]
+            cur.execute("SELECT COUNT(*) as c FROM rag_metrics WHERE hit=true")
+            rag_hits = cur.fetchone()["c"]
+            if rag_total > 0:
+                rag_hit_rate = round(rag_hits / rag_total * 100, 1)
+            cur.execute("SELECT AVG(max_similarity) as s FROM rag_metrics WHERE results_found > 0")
+            row = cur.fetchone()
+            rag_avg_similarity = round((row["s"] or 0) * 100, 1)
+        except Exception: pass
+
         cur.close(); conn.close()
         return jsonify({
             "rag_enabled": RAG_ENABLED,
@@ -555,6 +572,10 @@ def api_analytics():
             "sources": sources,
             "recent": recent,
             "terminology_count": terminology_count,
+            "rag_hit_rate": rag_hit_rate,
+            "rag_avg_similarity": rag_avg_similarity,
+            "rag_total_queries": rag_total,
+            "rag_total_hits": rag_hits,
         })
     except Exception as e:
         return jsonify({"error": str(e)})
@@ -585,11 +606,9 @@ def db_status():
         cur.execute("SELECT COUNT(DISTINCT url) as c FROM translations")
         out["unique_urls"] = cur.fetchone()["c"]
         cur.execute("""
-            SELECT tc.constraint_name,
-                   string_agg(ccu.column_name, ', ' ORDER BY ccu.column_name) as cols
+            SELECT tc.constraint_name, string_agg(ccu.column_name, ', ' ORDER BY ccu.column_name) as cols
             FROM information_schema.table_constraints tc
-            JOIN information_schema.constraint_column_usage ccu
-              USING (constraint_name, table_name)
+            JOIN information_schema.constraint_column_usage ccu USING (constraint_name, table_name)
             WHERE tc.table_name = 'translations' AND tc.constraint_type = 'UNIQUE'
             GROUP BY tc.constraint_name
         """)
@@ -607,105 +626,36 @@ def db_status():
             mimetype="application/json"
         )
     except Exception as e:
-        import traceback
         return app.response_class(
-            response=json.dumps({"error": str(e), "trace": traceback.format_exc()}, indent=2),
+            response=json.dumps({"error": str(e)}, indent=2),
             mimetype="application/json"
         ), 500
 
 
-@app.route("/api/migrate-archive")
-def migrate_archive():
-    import threading, hashlib
-    def _run():
-        import time
-        try:
-            from rag import get_conn, get_embeddings_batch, _embed_ready
-            for _ in range(60):
-                if _embed_ready: break
-                time.sleep(2)
-            conn = get_conn(); cur = conn.cursor()
-            cur.execute("""
-                SELECT a.url, a.title, a.author, a.paragraph
-                FROM ozgurpolitika_archive a
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM translations t WHERE t.orig_para = a.paragraph
-                )
-                ORDER BY a.id
-            """)
-            rows = cur.fetchall()
-            cur.close(); conn.close()
-            total = len(rows)
-            print(f"[MIGRATE] {total} paragraphs to process ...")
-            if total == 0:
-                print("[MIGRATE] Nothing to do ✓")
-                return
-            BATCH = 10; inserted = 0
-            for i in range(0, total, BATCH):
-                batch = rows[i:i+BATCH]
-                vecs = get_embeddings_batch([r["paragraph"] for r in batch])
-                conn2 = get_conn(); cur2 = conn2.cursor()
-                for row, vec in zip(batch, vecs):
-                    try:
-                        import hashlib as _hl
-                        para_url = row["url"] + "#" + _hl.md5(row["paragraph"][:80].encode()).hexdigest()[:8]
-                        # WHERE NOT EXISTS — no CONFLICT constraint needed
-                        cur2.execute("""
-                            INSERT INTO translations
-                                (source,author,url,title_orig,title_tr,orig_para,tr_para,embedding)
-                            SELECT %s,%s,%s,%s,%s,%s,%s,%s
-                            WHERE NOT EXISTS (
-                                SELECT 1 FROM translations WHERE orig_para = %s
-                            )
-                        """, ("Özgür Politika", row["author"] or "", para_url,
-                              row["title"] or "", row["title"] or "",
-                              row["paragraph"], row["paragraph"], vec,
-                              row["paragraph"]))
-                        inserted += 1
-                    except Exception as row_err:
-                        conn2.rollback()
-                        print(f"[MIGRATE] Row error: {row_err}")
-                conn2.commit(); cur2.close(); conn2.close()
-                print(f"[MIGRATE] {min(i+BATCH,total)}/{total} ...")
-                time.sleep(0.5)
-            print(f"[MIGRATE] Done — {inserted}/{total} ✓")
-        except Exception as e:
-            print(f"[MIGRATE] Error: {e}")
-    threading.Thread(target=_run, daemon=True).start()
-    return app.response_class(
-        response=json.dumps({"status": "started"}, ensure_ascii=False),
-        mimetype="application/json"
-    )
-
-
 @app.route("/api/fix-constraint")
 def fix_constraint():
-    import os, json, psycopg2
+    import os, psycopg2
     try:
         conn = psycopg2.connect(os.environ.get("DATABASE_URL",""))
         conn.autocommit = True
         cur = conn.cursor()
-
-        # Drop old url-only unique constraint
         cur.execute("""
             SELECT constraint_name FROM information_schema.table_constraints
             WHERE table_name='translations' AND constraint_type='UNIQUE'
         """)
-        constraints = [r[0] for r in cur.fetchall()]
         dropped = []
-        for c in constraints:
-            cur.execute(f"ALTER TABLE translations DROP CONSTRAINT IF EXISTS {c};")
-            dropped.append(c)
-
-        # Add correct composite unique
-        cur.execute("""
-            ALTER TABLE translations
-            ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);
-        """)
-
+        for row in cur.fetchall():
+            c = row[0]
+            if 'url_para' not in c:
+                cur.execute(f"ALTER TABLE translations DROP CONSTRAINT IF EXISTS {c};")
+                dropped.append(c)
+        try:
+            cur.execute("ALTER TABLE translations ADD CONSTRAINT translations_url_para_key UNIQUE (url, orig_para);")
+        except Exception:
+            pass
         cur.close(); conn.close()
         return app.response_class(
-            response=json.dumps({"dropped": dropped, "added": "UNIQUE(url, orig_para)", "status": "ok"}, indent=2),
+            response=json.dumps({"dropped": dropped, "status": "ok"}, indent=2),
             mimetype="application/json"
         )
     except Exception as e:
