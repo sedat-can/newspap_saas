@@ -266,7 +266,8 @@ def build_docx(articles_data):
         # Body
         for chunk in art.get("paragraphs", []):
             tr_val = chunk.get("translated","")
-        bp = doc.add_paragraph(tr_val if isinstance(tr_val, str) else (tr_val[0] if tr_val else ""))
+            tr_str = tr_val[0] if isinstance(tr_val, tuple) else (tr_val if isinstance(tr_val, str) else "")
+            bp = doc.add_paragraph(tr_str)
             for r in bp.runs: r.font.size = Pt(11)
 
         # Source URL
